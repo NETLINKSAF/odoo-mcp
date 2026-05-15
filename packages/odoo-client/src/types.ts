@@ -1,7 +1,21 @@
 /** Odoo domain filter element */
-export type DomainOperator = '=' | '!=' | '>' | '>=' | '<' | '<=' | 'like' | 'ilike'
-  | 'not like' | 'not ilike' | '=like' | '=ilike' | 'in' | 'not in'
-  | 'child_of' | 'parent_of';
+export type DomainOperator =
+  | '='
+  | '!='
+  | '>'
+  | '>='
+  | '<'
+  | '<='
+  | 'like'
+  | 'ilike'
+  | 'not like'
+  | 'not ilike'
+  | '=like'
+  | '=ilike'
+  | 'in'
+  | 'not in'
+  | 'child_of'
+  | 'parent_of';
 export type DomainLeaf = [field: string, operator: DomainOperator, value: unknown];
 export type DomainConnector = '&' | '|' | '!';
 export type Domain = Array<DomainLeaf | DomainConnector>;

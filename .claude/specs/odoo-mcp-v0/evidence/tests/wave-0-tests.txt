@@ -1,0 +1,10 @@
+
+ RUN  v3.2.4 /Users/fg/projects/odoo_mcp/packages/odoo-client
+
+ ✓ tests/errors.test.ts (9 tests) 2ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  11:31:27
+   Duration  464ms (transform 285ms, setup 0ms, collect 284ms, tests 2ms, environment 0ms, prepare 36ms)
+
