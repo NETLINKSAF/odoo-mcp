@@ -7,6 +7,11 @@ import { formatMcpError } from '../errors.js';
 import type { Logger } from '../logger.js';
 import { callActionSchema } from './schemas.js';
 
+// Threat-model US-5 AC-9 analogue: action_name is dispatched as a method on
+// execute_kw, so unrestricted strings would let a caller invoke arbitrary
+// ORM methods (e.g. 'unlink') and bypass tool-shaped guardrails.
+const METHOD_RE = /^[a-z_][a-z0-9_]*$/;
+
 function inputValidationError(message: string) {
   return {
     isError: true as const,
@@ -36,6 +41,12 @@ export function registerActionTool(
     }
 
     const data = parsed.data;
+
+    // Step 1b: threat-model guard — reject method names with characters
+    // that could bypass the tool-shaped surface (analogous to US-5 AC-9).
+    if (!METHOD_RE.test(data.action_name)) {
+      return inputValidationError('action_name contains invalid characters');
+    }
 
     // Step 2: validate company subset if provided
     if (data.allowed_company_ids !== undefined) {

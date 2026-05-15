@@ -381,7 +381,7 @@
   },
 
   "execution": {
-    "current_wave": 4,
+    "current_wave": 5,
     "current_batch": [],
     "iteration": 0,
     "total_tokens": 0,
@@ -574,7 +574,13 @@
     { "ts": "2026-05-15T15:55:00Z", "event": "task_completed", "task_id": "T-19", "files": ["packages/odoo-mcp/src/probe.ts", "packages/odoo-mcp/tests/probe.test.ts"], "lines": "probe:231 probe.test:299", "test_result": "21 new tests passing", "design_notes": "7 promises produce 8 ProbeResult fields (userContext promise yields both language and locale from one res.users.context_get call). fiscalYear has internal try/catch for OdooMissingError → synthetic current-year fallback. All-fail warning to stderr per US-3 AC-6." },
     { "ts": "2026-05-15T15:55:30Z", "event": "gate_run", "wave": 4, "sub_batch": "4b", "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-4b-lint.txt", "note": "1 file autofixed" },
     { "ts": "2026-05-15T15:55:30Z", "event": "gate_run", "wave": 4, "sub_batch": "4b", "gate": "tsc", "status": "pass", "errors_now": 2, "baseline_errors": 6, "delta": -4, "evidence": "evidence/tests/wave-4b-typecheck-mcp.txt", "note": "Only T-22 ./server.js baseline errors remain." },
-    { "ts": "2026-05-15T15:55:30Z", "event": "gate_run", "wave": 4, "sub_batch": "4b", "gate": "vitest", "status": "pass", "tests": "213/213 (47 client + 166 mcp; +47 in wave 4b)", "evidence": "evidence/tests/wave-4b-tests.txt" }
+    { "ts": "2026-05-15T15:55:30Z", "event": "gate_run", "wave": 4, "sub_batch": "4b", "gate": "vitest", "status": "pass", "tests": "213/213 (47 client + 166 mcp; +47 in wave 4b)", "evidence": "evidence/tests/wave-4b-tests.txt" },
+    { "ts": "2026-05-15T15:57:00Z", "event": "integration_smoke_skipped", "wave": 4, "reason": "integration_cmd remains null. Logged per skill warning requirement." },
+    { "ts": "2026-05-15T15:58:00Z", "event": "security_review", "wave": 4, "findings": { "critical": 0, "high": 2, "medium": 4 }, "evidence": "evidence/security-review-wave-4.md", "note": "Auth-relevant tool-handler surface. 0 CRITICAL, 2 HIGH (F-001 action_name regex gap, F-002 model regex inconsistency), 4 MEDIUM." },
+    { "ts": "2026-05-15T15:59:00Z", "event": "autonomous_fix", "issue": "F-001 — action_name in odoo_call_action accepted unrestricted strings, allowing arbitrary ORM method dispatch via execute_kw (analogous to US-5 AC-9 threat).", "fix": "Added METHOD_RE=/^[a-z_][a-z0-9_]*$/ check at top of action handler with early-return InputValidationError. Mirrors execute.ts pattern. Gates re-run: biome ✓, tsc 2 (baseline), vitest 213/213 (no regressions; existing action tests use snake_case names that satisfy the regex)." },
+    { "ts": "2026-05-15T15:59:30Z", "event": "security_deferred", "wave": 4, "deferred": ["F-002 (model regex on other tools)", "F-003 (sanitizeArgs for odoo_execute)", "F-004 (logger on validation failure)", "F-005 (non-OdooError logging)", "F-006 (domain structural validation)"], "reason": "F-002: spec US-5 AC-9 explicitly scoped to execute tool, other tools have hardcoded methods so model is less attacker-relevant. F-003/4/5: behavior changes and observability, not security primitives. F-006: accepted by design per US-4 AC-8. All five tracked in evidence/security-review-wave-4.md for v0.1 hardening." },
+    { "ts": "2026-05-15T16:00:00Z", "event": "wired_verification_deferred", "wave": 4, "task_ids": ["T-14", "T-15", "T-16", "T-17", "T-18"], "reason": "Spec design intentionally separates 'build tool handler' (wave 4) from 'register tool handler' (T-21 in wave 5). All 5 tasks have Wired=pending; the imports happen in T-21 which owns tools/index.ts. Wired verification deferred to wave 5 close where T-21 will satisfy all 5 imports simultaneously. T-19 is wired=n/a (consumed by T-20 resource publisher)." },
+    { "ts": "2026-05-15T16:00:00Z", "event": "wave_completed", "wave": 4, "task_count": 6, "duration_min": 35, "tasks": ["T-14", "T-15", "T-16", "T-17", "T-18", "T-19"], "sub_batches": 2 }
   ],
 
   "security": {
@@ -583,8 +589,8 @@
     "threat_model_status": "completed",
     "findings": {
       "critical": 0,
-      "high": 5,
-      "medium": 8
+      "high": 6,
+      "medium": 12
     }
   },
 
