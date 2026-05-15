@@ -1,0 +1,17 @@
+
+ RUN  v3.2.4 /Users/fg/projects/odoo_mcp/packages/odoo-mcp
+
+ ✓ tests/logger.test.ts (9 tests) 5ms
+ ✓ tests/tools/schemas.test.ts (29 tests) 4ms
+ ✓ tests/config.test.ts (9 tests) 4ms
+ ✓ tests/errors.test.ts (12 tests) 2ms
+ ✓ tests/context.test.ts (15 tests) 2ms
+ ✓ tests/tools/execute.test.ts (11 tests) 5ms
+ ✓ tests/tools/report.test.ts (14 tests) 6ms
+ ✓ tests/tools/orm.test.ts (20 tests) 8ms
+
+ Test Files  8 passed (8)
+      Tests  119 passed (119)
+   Start at  13:52:42
+   Duration  250ms (transform 167ms, setup 0ms, collect 386ms, tests 36ms, environment 1ms, prepare 300ms)
+

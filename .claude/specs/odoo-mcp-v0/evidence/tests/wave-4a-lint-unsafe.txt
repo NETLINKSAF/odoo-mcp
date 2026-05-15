@@ -1,0 +1,91 @@
+./packages/odoo-mcp/src/tools/orm.ts:127:19 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    125 │   // -------------------------------------------------------------------------
+    126 │   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  > 127 │   (server.tool as any)(
+        │                   ^^^
+    128 │     'odoo_search_read',
+    129 │     async (args: unknown): Promise<ToolResult> =>
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+./packages/odoo-mcp/src/tools/orm.ts:150:19 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    148 │   // -------------------------------------------------------------------------
+    149 │   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  > 150 │   (server.tool as any)(
+        │                   ^^^
+    151 │     'odoo_read',
+    152 │     async (args: unknown): Promise<ToolResult> =>
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+./packages/odoo-mcp/src/tools/orm.ts:167:19 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    165 │   // -------------------------------------------------------------------------
+    166 │   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  > 167 │   (server.tool as any)(
+        │                   ^^^
+    168 │     'odoo_create',
+    169 │     async (args: unknown): Promise<ToolResult> =>
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+./packages/odoo-mcp/src/tools/orm.ts:189:19 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    187 │   // -------------------------------------------------------------------------
+    188 │   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  > 189 │   (server.tool as any)(
+        │                   ^^^
+    190 │     'odoo_write',
+    191 │     async (args: unknown): Promise<ToolResult> =>
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+./packages/odoo-mcp/src/tools/orm.ts:206:19 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    204 │   // -------------------------------------------------------------------------
+    205 │   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  > 206 │   (server.tool as any)(
+        │                   ^^^
+    207 │     'odoo_unlink',
+    208 │     async (args: unknown): Promise<ToolResult> =>
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+./packages/odoo-mcp/src/tools/orm.ts:223:19 lint/suspicious/noExplicitAny ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    221 │   // -------------------------------------------------------------------------
+    222 │   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  > 223 │   (server.tool as any)(
+        │                   ^^^
+    224 │     'odoo_search_count',
+    225 │     async (args: unknown): Promise<ToolResult> =>
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+Checked 17 files in 14ms. Fixed 3 files.
+Found 6 errors.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+

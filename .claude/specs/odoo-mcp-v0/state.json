@@ -196,9 +196,9 @@
     },
     "T-14": {
       "title": "ORM tool handlers",
-      "status": "pending",
+      "status": "completed",
       "wave": 4,
-      "wired": null,
+      "wired": "pending",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-7", "T-8", "T-11", "T-12", "T-13"],
       "files": [
@@ -208,9 +208,9 @@
     },
     "T-15": {
       "title": "Execute tool handler",
-      "status": "pending",
+      "status": "completed",
       "wave": 4,
-      "wired": null,
+      "wired": "pending",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
       "files": [
@@ -220,9 +220,9 @@
     },
     "T-16": {
       "title": "Report tool handler",
-      "status": "pending",
+      "status": "completed",
       "wave": 4,
-      "wired": null,
+      "wired": "pending",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
       "files": [
@@ -559,7 +559,16 @@
     { "ts": "2026-05-15T15:19:30Z", "event": "security_review_skipped", "wave": 3, "reason": "Wave 3 introduced 6 internal infrastructure modules: OdooClient (orchestrator over already-reviewed jsonRpc + auth), Zod input schemas (validation only, no exec surface), config loader (env parsing with US-1 AC-6 self-tested), structured logger (no external input), MCP error formatter (pure mapper with US-8 AC-6 self-tested), context builder (US-7 AC-7 enforcement self-tested). The attacker-relevant surface is dominated by wave-4 tool handlers which take Claude-controlled args; defer the next security review to wave 4. Cumulative findings unchanged (high: 5, medium: 8)." },
     { "ts": "2026-05-15T15:19:30Z", "event": "wired_verification_skipped", "wave": 3, "reason": "All 6 wave-3 tasks have wired='n/a' per spec. T-7/T-9/T-10/T-11/T-12/T-13 are interior modules consumed by future waves (T-14..T-22). No grep verification applies. Cross-agent imports verified via tsc passing (mcp side now imports @netlinks/odoo-client cleanly via built dist)." },
     { "ts": "2026-05-15T15:19:30Z", "event": "wave_completed", "wave": 3, "task_count": 6, "duration_min": 20, "tasks": ["T-7", "T-9", "T-10", "T-11", "T-12", "T-13"], "sub_batches": 3 },
-    { "ts": "2026-05-15T15:20:00Z", "event": "loop_checkpoint", "wave_at_checkpoint": 4, "tasks_completed": 13, "tasks_remaining": 11, "head_sha": "e2422a6", "reason": "Session length checkpoint after wave 3 close. State.json preserves current_wave=4, all task statuses, gate evidence, security findings. Wave 4 (tool handlers T-14..T-19, 6 tasks) is the next biggest wave and benefits from a fresh session. Resume with /spec-loop." }
+    { "ts": "2026-05-15T15:20:00Z", "event": "loop_checkpoint", "wave_at_checkpoint": 4, "tasks_completed": 13, "tasks_remaining": 11, "head_sha": "e2422a6", "reason": "Session length checkpoint after wave 3 close. State.json preserves current_wave=4, all task statuses, gate evidence, security findings. Wave 4 (tool handlers T-14..T-19, 6 tasks) is the next biggest wave and benefits from a fresh session. Resume with /spec-loop." },
+    { "ts": "2026-05-15T15:25:00Z", "event": "loop_resumed", "head_sha": "6199a34", "integrity_match": true, "dist_present": true, "note": "Fresh session resume. Working tree clean, integrity hashes match, dist/ persisted from prior session. Ready for wave 4." },
+    { "ts": "2026-05-15T15:25:00Z", "event": "wave_started", "wave": 4, "pre_wave_sha": "6199a34e95553f164b9549b204314d32391ee621", "pending_task_count": 6, "task_ids": ["T-14", "T-15", "T-16", "T-17", "T-18", "T-19"], "parallel_strategy": "Two batches of 3 (max_parallel=3), no worktree (same reasoning as wave 3: worktrees lack untracked dist/ and files are disjoint by construction)." },
+    { "ts": "2026-05-15T15:50:00Z", "event": "task_completed", "task_id": "T-14", "files": ["packages/odoo-mcp/src/tools/orm.ts", "packages/odoo-mcp/tests/tools/orm.test.ts"], "lines": "orm:236 orm.test:385", "test_result": "20 new tests passing", "design_notes": "executeHandler() helper centralizes parse → validateCompanySubset → buildContext → exec → log pattern across 6 ORM tool registrations. Uses (server.tool as any) cast for the no-schema overload (MCP SDK ToolCallback signature mismatch with our manual InputValidationError handling)." },
+    { "ts": "2026-05-15T15:50:00Z", "event": "task_completed", "task_id": "T-15", "files": ["packages/odoo-mcp/src/tools/execute.ts", "packages/odoo-mcp/tests/tools/execute.test.ts"], "lines": "execute:141 execute.test:232", "test_result": "11 new tests passing", "design_notes": "Threat-model US-5 AC-9: MODEL_RE=/^[a-z][a-z0-9_.]*$/ + METHOD_RE=/^[a-z_][a-z0-9_]*$/ run BEFORE network call. Uses Record<string, unknown> arg type — no `any` cast needed (overload type-checks)." },
+    { "ts": "2026-05-15T15:50:00Z", "event": "task_completed", "task_id": "T-16", "files": ["packages/odoo-mcp/src/tools/report.ts", "packages/odoo-mcp/tests/tools/report.test.ts"], "lines": "report:98 report.test:262", "test_result": "14 new tests passing" },
+    { "ts": "2026-05-15T15:50:30Z", "event": "autonomous_fix", "issue": "orm.ts uses 6 `as any` casts which biome's noExplicitAny rule rejects. Agent's eslint-disable comments don't apply to biome.", "fix": "Replaced all 6 with biome-ignore directives pointing at the MCP SDK no-schema overload mismatch (the documented underlying cause)." },
+    { "ts": "2026-05-15T15:51:00Z", "event": "gate_run", "wave": 4, "sub_batch": "4a", "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-4a-lint.txt" },
+    { "ts": "2026-05-15T15:51:00Z", "event": "gate_run", "wave": 4, "sub_batch": "4a", "gate": "tsc", "status": "pass", "errors_now": 2, "baseline_errors": 6, "delta": -4, "evidence": "evidence/tests/wave-4a-typecheck-mcp.txt", "note": "Only T-22 ./server.js baseline errors remain." },
+    { "ts": "2026-05-15T15:51:00Z", "event": "gate_run", "wave": 4, "sub_batch": "4a", "gate": "vitest", "status": "pass", "tests": "166/166 (47 client + 119 mcp; +45 in wave 4a)", "evidence": "evidence/tests/wave-4a-tests.txt" }
   ],
 
   "security": {
