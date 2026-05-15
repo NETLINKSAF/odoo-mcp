@@ -232,9 +232,9 @@
     },
     "T-17": {
       "title": "Action tool handler",
-      "status": "pending",
+      "status": "completed",
       "wave": 4,
-      "wired": null,
+      "wired": "pending",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
       "files": [
@@ -244,9 +244,9 @@
     },
     "T-18": {
       "title": "Fields-get tool handler",
-      "status": "pending",
+      "status": "completed",
       "wave": 4,
-      "wired": null,
+      "wired": "pending",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
       "files": [
@@ -256,9 +256,9 @@
     },
     "T-19": {
       "title": "Capability probe",
-      "status": "pending",
+      "status": "completed",
       "wave": 4,
-      "wired": null,
+      "wired": "n/a",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-7"],
       "files": [
@@ -568,7 +568,13 @@
     { "ts": "2026-05-15T15:50:30Z", "event": "autonomous_fix", "issue": "orm.ts uses 6 `as any` casts which biome's noExplicitAny rule rejects. Agent's eslint-disable comments don't apply to biome.", "fix": "Replaced all 6 with biome-ignore directives pointing at the MCP SDK no-schema overload mismatch (the documented underlying cause)." },
     { "ts": "2026-05-15T15:51:00Z", "event": "gate_run", "wave": 4, "sub_batch": "4a", "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-4a-lint.txt" },
     { "ts": "2026-05-15T15:51:00Z", "event": "gate_run", "wave": 4, "sub_batch": "4a", "gate": "tsc", "status": "pass", "errors_now": 2, "baseline_errors": 6, "delta": -4, "evidence": "evidence/tests/wave-4a-typecheck-mcp.txt", "note": "Only T-22 ./server.js baseline errors remain." },
-    { "ts": "2026-05-15T15:51:00Z", "event": "gate_run", "wave": 4, "sub_batch": "4a", "gate": "vitest", "status": "pass", "tests": "166/166 (47 client + 119 mcp; +45 in wave 4a)", "evidence": "evidence/tests/wave-4a-tests.txt" }
+    { "ts": "2026-05-15T15:51:00Z", "event": "gate_run", "wave": 4, "sub_batch": "4a", "gate": "vitest", "status": "pass", "tests": "166/166 (47 client + 119 mcp; +45 in wave 4a)", "evidence": "evidence/tests/wave-4a-tests.txt" },
+    { "ts": "2026-05-15T15:55:00Z", "event": "task_completed", "task_id": "T-17", "files": ["packages/odoo-mcp/src/tools/action.ts", "packages/odoo-mcp/tests/tools/action.test.ts"], "lines": "action:127 action.test:329", "test_result": "16 new tests passing", "design_notes": "Caller context passed as buildContext's 3rd arg (extraContext) so uid/company_id cannot be overridden (US-7 AC-7)." },
+    { "ts": "2026-05-15T15:55:00Z", "event": "task_completed", "task_id": "T-18", "files": ["packages/odoo-mcp/src/tools/introspect.ts", "packages/odoo-mcp/tests/tools/introspect.test.ts"], "lines": "introspect:120 introspect.test:236", "test_result": "10 new tests passing" },
+    { "ts": "2026-05-15T15:55:00Z", "event": "task_completed", "task_id": "T-19", "files": ["packages/odoo-mcp/src/probe.ts", "packages/odoo-mcp/tests/probe.test.ts"], "lines": "probe:231 probe.test:299", "test_result": "21 new tests passing", "design_notes": "7 promises produce 8 ProbeResult fields (userContext promise yields both language and locale from one res.users.context_get call). fiscalYear has internal try/catch for OdooMissingError → synthetic current-year fallback. All-fail warning to stderr per US-3 AC-6." },
+    { "ts": "2026-05-15T15:55:30Z", "event": "gate_run", "wave": 4, "sub_batch": "4b", "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-4b-lint.txt", "note": "1 file autofixed" },
+    { "ts": "2026-05-15T15:55:30Z", "event": "gate_run", "wave": 4, "sub_batch": "4b", "gate": "tsc", "status": "pass", "errors_now": 2, "baseline_errors": 6, "delta": -4, "evidence": "evidence/tests/wave-4b-typecheck-mcp.txt", "note": "Only T-22 ./server.js baseline errors remain." },
+    { "ts": "2026-05-15T15:55:30Z", "event": "gate_run", "wave": 4, "sub_batch": "4b", "gate": "vitest", "status": "pass", "tests": "213/213 (47 client + 166 mcp; +47 in wave 4b)", "evidence": "evidence/tests/wave-4b-tests.txt" }
   ],
 
   "security": {
