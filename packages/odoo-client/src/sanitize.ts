@@ -29,7 +29,7 @@ export function sanitizeArgs(
 
   const cloned = structuredClone(args);
 
-  const values = cloned['values'];
+  const values = cloned.values;
   if (values === null || typeof values !== 'object') {
     return cloned;
   }
