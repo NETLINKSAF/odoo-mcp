@@ -103,9 +103,9 @@
     },
     "T-6": {
       "title": "Auth strategy abstraction",
-      "status": "pending",
+      "status": "completed",
       "wave": 2,
-      "wired": null,
+      "wired": "n/a",
       "failures": 0,
       "depends_on": ["T-1", "T-5"],
       "files": [
@@ -521,7 +521,14 @@
     { "ts": "2026-05-15T15:13:00Z", "event": "gate_run", "wave": 1, "gate": "vitest", "status": "pass", "tests": "19/19", "evidence": "evidence/tests/wave-1-tests.txt" },
     { "ts": "2026-05-15T15:13:00Z", "event": "security_review_skipped", "wave": 1, "reason": "T-8 sanitize is pure-function PII redaction (no external surface); T-5 rpc is fetch-based JSON-RPC where the threat-model criterion (30s timeout, error mapping) is already enforced in the implementation and verified by unit tests. Skip is autonomous decision; will run security review at Wave 3 when actual MCP tool handlers introduce attacker-controllable input paths." },
     { "ts": "2026-05-15T15:13:00Z", "event": "wave_completed", "wave": 1, "task_count": 2, "duration_min": 5 },
-    { "ts": "2026-05-15T15:13:30Z", "event": "loop_checkpoint", "reason": "Session length checkpoint. Wave 0 + Wave 1 complete (6/24 tasks). state.json preserves current_wave=2, all task statuses, gate baseline. Resume with /spec-loop in a fresh session." }
+    { "ts": "2026-05-15T15:13:30Z", "event": "loop_checkpoint", "reason": "Session length checkpoint. Wave 0 + Wave 1 complete (6/24 tasks). state.json preserves current_wave=2, all task statuses, gate baseline. Resume with /spec-loop in a fresh session." },
+    { "ts": "2026-05-15T14:50:00Z", "event": "loop_resumed", "git_sha_at_resume": "21048148df93b5b4d24997f924d11163fbd3f633", "integrity_match": true, "note": "Resumed from checkpoint. Working tree had a stray pnpm-workspace.yaml diff (pnpm 11.x auto-prompt artifact); reverted because the real onlyBuiltDependencies workaround lives in root package.json. Spec file SHAs unchanged since validation." },
+    { "ts": "2026-05-15T14:50:00Z", "event": "wave_started", "wave": 2, "pre_wave_sha": "21048148df93b5b4d24997f924d11163fbd3f633", "pending_task_count": 1, "task_ids": ["T-6"], "parallel_strategy": "single-task (no parallelism needed)" },
+    { "ts": "2026-05-15T14:56:00Z", "event": "task_completed", "task_id": "T-6", "files": ["packages/odoo-client/src/auth.ts", "packages/odoo-client/tests/auth.test.ts"], "lines": "auth:176 auth.test:258", "test_result": "10/10 new tests passing (29/29 total)", "design_notes": "applyAuth is structural no-op because JsonRpcRequest carries no headers field — callers inject cookies via jsonRpc's 4th arg. SessionCookieAuthStrategy.authenticate calls fetch directly to read Set-Cookie. Minimal `declare const process` ambient declaration avoids needing @types/node." },
+    { "ts": "2026-05-15T14:56:30Z", "event": "autonomous_fix", "issue": "biome useLiteralKeys + useTemplate lint errors in auth.ts (4 bracket-key accesses + 1 string concat)", "fix": "biome check --write --unsafe applied — same precedent as Wave 1 T-8" },
+    { "ts": "2026-05-15T14:57:00Z", "event": "gate_run", "wave": 2, "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-2-lint.txt" },
+    { "ts": "2026-05-15T14:57:00Z", "event": "gate_run", "wave": 2, "gate": "tsc", "status": "pass", "errors_now": 3, "baseline_errors": 6, "delta": -3, "evidence": "evidence/tests/wave-2-typecheck-{client,mcp}.txt", "note": "Wave 2 dropped tsc errors by 3 (auth.js barrel target now exists; 1 client error remaining = T-7 client.js, 2 mcp errors = T-22 server.js)." },
+    { "ts": "2026-05-15T14:57:00Z", "event": "gate_run", "wave": 2, "gate": "vitest", "status": "pass", "tests": "29/29 (added auth.test.ts: 10 tests)", "evidence": "evidence/tests/wave-2-tests.txt" }
   ],
 
   "security": {

@@ -1,0 +1,123 @@
+./packages/odoo-client/src/auth.ts:20:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  × The computed expression can be simplified without the use of a string literal.
+  
+    18 │   const r = raw as Record<string, unknown>;
+    19 │ 
+  > 20 │   const uid = r['uid'];
+       │                 ^^^^^
+    21 │   if (typeof uid !== 'number') {
+    22 │     throw new OdooAuthError('Invalid authenticate response: missing uid');
+  
+  i Unsafe fix: Use a literal key instead.
+  
+     18  18 │     const r = raw as Record<string, unknown>;
+     19  19 │   
+     20     │ - ··const·uid·=·r['uid'];
+         20 │ + ··const·uid·=·r.uid;
+     21  21 │     if (typeof uid !== 'number') {
+     22  22 │       throw new OdooAuthError('Invalid authenticate response: missing uid');
+  
+
+./packages/odoo-client/src/auth.ts:25:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  × The computed expression can be simplified without the use of a string literal.
+  
+    23 │   }
+    24 │ 
+  > 25 │   const companyId = r['company_id'];
+       │                       ^^^^^^^^^^^^
+    26 │   if (typeof companyId !== 'number') {
+    27 │     throw new OdooAuthError('Invalid authenticate response: missing company_id');
+  
+  i Unsafe fix: Use a literal key instead.
+  
+     23  23 │     }
+     24  24 │   
+     25     │ - ··const·companyId·=·r['company_id'];
+         25 │ + ··const·companyId·=·r.company_id;
+     26  26 │     if (typeof companyId !== 'number') {
+     27  27 │       throw new OdooAuthError('Invalid authenticate response: missing company_id');
+  
+
+./packages/odoo-client/src/auth.ts:30:24 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  × The computed expression can be simplified without the use of a string literal.
+  
+    28 │   }
+    29 │ 
+  > 30 │   const rawAllowed = r['allowed_company_ids'];
+       │                        ^^^^^^^^^^^^^^^^^^^^^
+    31 │   if (!Array.isArray(rawAllowed)) {
+    32 │     throw new OdooAuthError('Invalid authenticate response: missing allowed_company_ids');
+  
+  i Unsafe fix: Use a literal key instead.
+  
+     28  28 │     }
+     29  29 │   
+     30     │ - ··const·rawAllowed·=·r['allowed_company_ids'];
+         30 │ + ··const·rawAllowed·=·r.allowed_company_ids;
+     31  31 │     if (!Array.isArray(rawAllowed)) {
+     32  32 │       throw new OdooAuthError('Invalid authenticate response: missing allowed_company_ids');
+  
+
+./packages/odoo-client/src/auth.ts:36:25 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  × The computed expression can be simplified without the use of a string literal.
+  
+    34 │   const allowedCompanyIds = rawAllowed as number[];
+    35 │ 
+  > 36 │   const userContext = r['user_context'];
+       │                         ^^^^^^^^^^^^^^
+    37 │   if (userContext === null || typeof userContext !== 'object' || Array.isArray(userContext)) {
+    38 │     throw new OdooAuthError('Invalid authenticate response: missing user_context');
+  
+  i Unsafe fix: Use a literal key instead.
+  
+     34  34 │     const allowedCompanyIds = rawAllowed as number[];
+     35  35 │   
+     36     │ - ··const·userContext·=·r['user_context'];
+         36 │ + ··const·userContext·=·r.user_context;
+     37  37 │     if (userContext === null || typeof userContext !== 'object' || Array.isArray(userContext)) {
+     38  38 │       throw new OdooAuthError('Invalid authenticate response: missing user_context');
+  
+
+./packages/odoo-client/src/auth.ts:157:7 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Template literals are preferred over string concatenation.
+  
+    155 │   if (config.url.startsWith('http://')) {
+    156 │     process.stderr.write(
+  > 157 │       JSON.stringify({
+        │       ^^^^^^^^^^^^^^^^
+  > 158 │         event: 'warning',
+  > 159 │         message: 'ODOO_URL uses http:// — credentials transmitted in plaintext',
+  > 160 │       }) + '\n',
+        │       ^^^^^^^^^
+    161 │     );
+    162 │   }
+  
+  i Unsafe fix: Use a template literal.
+  
+    155 155 │     if (config.url.startsWith('http://')) {
+    156 156 │       process.stderr.write(
+    157     │ - ······JSON.stringify({
+        157 │ + ······`${JSON.stringify({
+    158 158 │           event: 'warning',
+    159 159 │           message: 'ODOO_URL uses http:// — credentials transmitted in plaintext',
+    160     │ - ······})·+·'\n',
+        160 │ + ······})}\n`,
+    161 161 │       );
+    162 162 │     }
+  
+
+Skipped 5 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --fix --unsafe
+
+Checked 8 files in 4ms. Fixed 1 file.
+Found 5 errors.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while applying fixes.
+  
+
