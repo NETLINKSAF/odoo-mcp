@@ -4,7 +4,7 @@
   "created_at": "2026-05-15T14:09:48Z",
   "quick_mode": false,
 
-  "phase": "validated",
+  "phase": "executed",
 
   "integrity": {
     "requirements_sha256": "7cc6dfb2951792142f88dc8337bb4dd1673ea79ec9c0af5489481ef39a27718f",
@@ -303,9 +303,9 @@
     },
     "T-23": {
       "title": "Smoke test script",
-      "status": "pending",
+      "status": "completed",
       "wave": 7,
-      "wired": null,
+      "wired": "n/a",
       "failures": 0,
       "depends_on": ["T-22"],
       "files": [
@@ -314,9 +314,9 @@
     },
     "T-24": {
       "title": "README, Claude Desktop config example, and Docker Compose",
-      "status": "pending",
+      "status": "completed",
       "wave": 7,
-      "wired": null,
+      "wired": "n/a",
       "failures": 0,
       "depends_on": ["T-22"],
       "files": [
@@ -602,7 +602,19 @@
     { "ts": "2026-05-15T16:39:00Z", "event": "gate_run", "wave": 6, "gate": "vitest", "status": "pass", "tests": "233/233 (47 client + 186 mcp; +8 in wave 6)", "evidence": "evidence/tests/wave-6-tests-{client,mcp}.txt" },
     { "ts": "2026-05-15T16:39:30Z", "event": "integration_smoke_skipped", "wave": 6, "reason": "integration_cmd null. Note: T-23 in wave 7 IS a smoke test, but the spec marks it manual-run only — not wired into the loop's integration_cmd." },
     { "ts": "2026-05-15T16:40:00Z", "event": "security_review", "wave": 6, "findings": { "critical": 0, "high": 0, "medium": 1 }, "evidence": "evidence/security-review-wave-6.md", "note": "Startup/auth/signal-handling surface. 0 CRITICAL, 0 HIGH, 1 MEDIUM (URL in stderr — accepted as informational; URL is non-secret and already logged at startup by design)." },
-    { "ts": "2026-05-15T16:40:30Z", "event": "wave_completed", "wave": 6, "task_count": 1, "duration_min": 10, "tasks": ["T-22"] }
+    { "ts": "2026-05-15T16:40:30Z", "event": "wave_completed", "wave": 6, "task_count": 1, "duration_min": 10, "tasks": ["T-22"] },
+    { "ts": "2026-05-15T16:42:00Z", "event": "wave_started", "wave": 7, "pre_wave_sha": "1961799", "pending_task_count": 2, "task_ids": ["T-23", "T-24"], "parallel_strategy": "2 parallel agents, disjoint file sets (scripts/ vs README+examples+docker-compose). Final wave." },
+    { "ts": "2026-05-15T16:48:00Z", "event": "task_completed", "task_id": "T-23", "files": ["scripts/smoke-test.mjs"], "lines": "smoke-test:166", "test_result": "syntax check ok; AC-2 (missing env) verified manually, AC-1 (happy path) requires live Odoo (documented)", "design_notes": "pending-Map + readline approach for JSON-RPC ID matching. proc.on('exit') fast-fail drains 30s timeout on config errors. Stderr teed AND accumulated for AC-2." },
+    { "ts": "2026-05-15T16:48:00Z", "event": "task_completed", "task_id": "T-24", "files": ["README.md", "examples/claude-desktop-config.json", "docker-compose.yml"], "lines": "README:115 claude-config:13 docker-compose:36", "test_result": "JSON parses, YAML parses (manually verified), README contains all required strings", "design_notes": "README came in at 115 lines (under 150 target) by spec preference for no-padding. ASCII only, no badges, no contributing section." },
+    { "ts": "2026-05-15T16:48:30Z", "event": "autonomous_fix", "issue": "biome useTemplate (3) + useNumberNamespace (1) + format (1) in scripts/smoke-test.mjs", "fix": "biome check --write --unsafe applied (smoke-test.mjs syntax re-verified after fix)" },
+    { "ts": "2026-05-15T16:49:00Z", "event": "gate_run", "wave": 7, "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-7-lint.txt" },
+    { "ts": "2026-05-15T16:49:00Z", "event": "gate_run", "wave": 7, "gate": "tsc", "status": "pass", "errors_now": 0, "baseline_errors": 6, "delta": -6, "evidence": "evidence/tests/wave-7-typecheck-{client,mcp}.txt", "note": "0/0 errors maintained from wave 6." },
+    { "ts": "2026-05-15T16:49:00Z", "event": "gate_run", "wave": 7, "gate": "vitest", "status": "pass", "tests": "233/233 (47 client + 186 mcp; T-23/T-24 are scripts/docs, no new tests)", "evidence": "evidence/tests/wave-7-tests-{client,mcp}.txt" },
+    { "ts": "2026-05-15T16:49:30Z", "event": "security_review_skipped", "wave": 7, "reason": "T-23 (manual-run smoke script, not in app surface) and T-24 (documentation + config samples + docker-compose with placeholder env). No new attacker-facing code." },
+    { "ts": "2026-05-15T16:49:30Z", "event": "integration_smoke_skipped", "wave": 7, "reason": "integration_cmd null. Note: T-23 IS the smoke test but is manual-run only by spec design — not wired into the loop's integration_cmd." },
+    { "ts": "2026-05-15T16:49:30Z", "event": "wave_completed", "wave": 7, "task_count": 2, "duration_min": 8, "tasks": ["T-23", "T-24"] },
+    { "ts": "2026-05-15T16:50:00Z", "event": "spec_completed", "tasks_completed": 24, "tasks_total": 24, "wired_summary": { "yes": 6, "n/a": 18 }, "test_total": 233, "test_passing": 233, "tsc_errors": 0, "biome_status": "pass", "security_findings": { "critical": 0, "high": 6, "medium": 13 }, "note": "All 24 tasks complete, all gates pass, all wired statuses resolved. Ready for phase advancement to 'executed'." },
+    { "ts": "2026-05-15T16:50:00Z", "event": "phase_advanced", "from": "validated", "to": "executed", "note": "Spec implementation complete. Next phases: /spec-accept (acceptance testing), /spec-docs (user docs), /spec-release." }
   ],
 
   "security": {

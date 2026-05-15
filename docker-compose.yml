@@ -1,0 +1,36 @@
+# Future integration-test harness for @netlinks/odoo-mcp.
+# Brings up Odoo 19 CE + Postgres 16. NOT wired to CI in v0 -- manual use only.
+#
+# Usage:
+#   docker compose up -d
+#   # Wait ~30s for Odoo to initialize the db, then visit http://localhost:8069
+#
+# Cleanup:
+#   docker compose down -v
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  odoo:
+    image: odoo:19
+    depends_on:
+      - db
+    environment:
+      HOST: db
+      USER: odoo
+      PASSWORD: odoo
+    ports:
+      - "8069:8069"
+    volumes:
+      - odoo-data:/var/lib/odoo
+
+volumes:
+  db-data:
+  odoo-data:

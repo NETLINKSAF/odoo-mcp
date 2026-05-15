@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "odoo": {
+      "command": "npx",
+      "args": ["@netlinks/odoo-mcp"],
+      "env": {
+        "ODOO_URL": "https://your.odoo.example.com",
+        "ODOO_DB": "your_database",
+        "ODOO_USERNAME": "your_username",
+        "ODOO_API_KEY": "your_api_key"
+      }
+    }
+  }
+}
