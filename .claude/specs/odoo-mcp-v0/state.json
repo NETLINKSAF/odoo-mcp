@@ -281,7 +281,7 @@
       "title": "Tool registration orchestrator",
       "status": "completed",
       "wave": 5,
-      "wired": "pending",
+      "wired": "yes",
       "failures": 0,
       "depends_on": ["T-14", "T-15", "T-16", "T-17", "T-18"],
       "files": [
@@ -290,9 +290,9 @@
     },
     "T-22": {
       "title": "MCP server factory and CLI entry point",
-      "status": "pending",
+      "status": "completed",
       "wave": 6,
-      "wired": null,
+      "wired": "n/a",
       "failures": 0,
       "depends_on": ["T-9", "T-10", "T-19", "T-20", "T-21"],
       "files": [
@@ -381,7 +381,7 @@
   },
 
   "execution": {
-    "current_wave": 6,
+    "current_wave": 7,
     "current_batch": [],
     "iteration": 0,
     "total_tokens": 0,
@@ -592,7 +592,17 @@
     { "ts": "2026-05-15T16:09:00Z", "event": "integration_smoke_skipped", "wave": 5, "reason": "integration_cmd still null." },
     { "ts": "2026-05-15T16:09:00Z", "event": "security_review_skipped", "wave": 5, "reason": "Wave 5 introduced T-21 (trivial 5-import aggregator) and T-20 (resource publisher that just JSON-serializes pre-fetched probe data). No new attacker-facing surface beyond what wave 4 already reviewed. Cumulative findings unchanged." },
     { "ts": "2026-05-15T16:09:00Z", "event": "wave_completed", "wave": 5, "task_count": 2, "duration_min": 7, "tasks": ["T-20", "T-21"] },
-    { "ts": "2026-05-15T16:10:00Z", "event": "loop_checkpoint", "wave_at_checkpoint": 6, "tasks_completed": 21, "tasks_remaining": 3, "head_sha": "4c45c05", "reason": "Session length checkpoint after wave 5 close. T-22 (server factory + CLI + integration tests, covers US-1/2/3/9/10) is the largest remaining task and benefits from a fresh session. Remaining: T-22 (wave 6), T-23 smoke + T-24 docs (wave 7). Resume with /spec-loop." }
+    { "ts": "2026-05-15T16:10:00Z", "event": "loop_checkpoint", "wave_at_checkpoint": 6, "tasks_completed": 21, "tasks_remaining": 3, "head_sha": "4c45c05", "reason": "Session length checkpoint after wave 5 close. T-22 (server factory + CLI + integration tests, covers US-1/2/3/9/10) is the largest remaining task and benefits from a fresh session. Remaining: T-22 (wave 6), T-23 smoke + T-24 docs (wave 7). Resume with /spec-loop." },
+    { "ts": "2026-05-15T16:30:00Z", "event": "loop_resumed", "head_sha": "289f9bb", "integrity_match": true, "note": "Fresh session resume. Integrity clean, 21/24 tasks done." },
+    { "ts": "2026-05-15T16:31:00Z", "event": "wave_started", "wave": 6, "pre_wave_sha": "289f9bbe27574030fa16af5391b5323a7fcd972b", "pending_task_count": 1, "task_ids": ["T-22"], "parallel_strategy": "single-task wave (the integration point)" },
+    { "ts": "2026-05-15T16:38:00Z", "event": "task_completed", "task_id": "T-22", "files": ["packages/odoo-mcp/src/server.ts", "packages/odoo-mcp/src/bin.ts", "packages/odoo-mcp/tests/server.test.ts"], "lines": "server:47 bin:51 server.test:196", "test_result": "8 new tests passing", "design_notes": "createOdooMcpServer returns { server, logger } so bin.ts can share the same logger instance (single fd on log file). OdooAuthError propagates uncaught to bin.ts's top-level try/catch. Signal handlers registered before server.connect blocks." },
+    { "ts": "2026-05-15T16:38:30Z", "event": "wired_verified", "wave": 6, "task_id": "T-21", "from_status": "pending", "to_status": "yes", "evidence": "grep packages/odoo-mcp/src/ found registerAllTools imported at server.ts:7 and called at server.ts:44. All previously-pending wired statuses now resolved." },
+    { "ts": "2026-05-15T16:39:00Z", "event": "gate_run", "wave": 6, "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-6-lint.txt", "note": "1 file autofixed" },
+    { "ts": "2026-05-15T16:39:00Z", "event": "gate_run", "wave": 6, "gate": "tsc", "status": "pass", "errors_now": 0, "baseline_errors": 6, "delta": -6, "evidence": "evidence/tests/wave-6-typecheck-{client,mcp}.txt", "note": "BASELINE CLEARED. tsc errors: 0 in both packages. T-22 created the ./server.js that the barrel re-export pointed at." },
+    { "ts": "2026-05-15T16:39:00Z", "event": "gate_run", "wave": 6, "gate": "vitest", "status": "pass", "tests": "233/233 (47 client + 186 mcp; +8 in wave 6)", "evidence": "evidence/tests/wave-6-tests-{client,mcp}.txt" },
+    { "ts": "2026-05-15T16:39:30Z", "event": "integration_smoke_skipped", "wave": 6, "reason": "integration_cmd null. Note: T-23 in wave 7 IS a smoke test, but the spec marks it manual-run only — not wired into the loop's integration_cmd." },
+    { "ts": "2026-05-15T16:40:00Z", "event": "security_review", "wave": 6, "findings": { "critical": 0, "high": 0, "medium": 1 }, "evidence": "evidence/security-review-wave-6.md", "note": "Startup/auth/signal-handling surface. 0 CRITICAL, 0 HIGH, 1 MEDIUM (URL in stderr — accepted as informational; URL is non-secret and already logged at startup by design)." },
+    { "ts": "2026-05-15T16:40:30Z", "event": "wave_completed", "wave": 6, "task_count": 1, "duration_min": 10, "tasks": ["T-22"] }
   ],
 
   "security": {
@@ -602,7 +612,7 @@
     "findings": {
       "critical": 0,
       "high": 6,
-      "medium": 12
+      "medium": 13
     }
   },
 
