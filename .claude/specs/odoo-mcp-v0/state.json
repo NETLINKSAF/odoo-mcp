@@ -591,7 +591,8 @@
     { "ts": "2026-05-15T16:09:00Z", "event": "wired_verification_deferred", "wave": 5, "task_id": "T-21", "reason": "T-21's registerAllTools is exported but has no current importer — by spec design T-22 (wave 6 server factory) will be the call site. Wired remains 'pending' until T-22 lands. T-20 (registerResources) and T-19 (runProbe) similarly are designed for T-22 consumption, but spec marked them n/a — leaving as-is." },
     { "ts": "2026-05-15T16:09:00Z", "event": "integration_smoke_skipped", "wave": 5, "reason": "integration_cmd still null." },
     { "ts": "2026-05-15T16:09:00Z", "event": "security_review_skipped", "wave": 5, "reason": "Wave 5 introduced T-21 (trivial 5-import aggregator) and T-20 (resource publisher that just JSON-serializes pre-fetched probe data). No new attacker-facing surface beyond what wave 4 already reviewed. Cumulative findings unchanged." },
-    { "ts": "2026-05-15T16:09:00Z", "event": "wave_completed", "wave": 5, "task_count": 2, "duration_min": 7, "tasks": ["T-20", "T-21"] }
+    { "ts": "2026-05-15T16:09:00Z", "event": "wave_completed", "wave": 5, "task_count": 2, "duration_min": 7, "tasks": ["T-20", "T-21"] },
+    { "ts": "2026-05-15T16:10:00Z", "event": "loop_checkpoint", "wave_at_checkpoint": 6, "tasks_completed": 21, "tasks_remaining": 3, "head_sha": "4c45c05", "reason": "Session length checkpoint after wave 5 close. T-22 (server factory + CLI + integration tests, covers US-1/2/3/9/10) is the largest remaining task and benefits from a fresh session. Remaining: T-22 (wave 6), T-23 smoke + T-24 docs (wave 7). Resume with /spec-loop." }
   ],
 
   "security": {
