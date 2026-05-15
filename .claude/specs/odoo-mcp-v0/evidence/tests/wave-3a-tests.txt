@@ -1,0 +1,13 @@
+
+ RUN  v3.2.4 /Users/fg/projects/odoo_mcp/packages/odoo-client
+
+ ✓ tests/errors.test.ts (9 tests) 2ms
+ ✓ tests/client.test.ts (18 tests) 6ms
+ ✓ tests/auth.test.ts (10 tests) 5ms
+ ✓ tests/rpc.test.ts (10 tests) 6ms
+
+ Test Files  4 passed (4)
+      Tests  47 passed (47)
+   Start at  12:06:41
+   Duration  269ms (transform 205ms, setup 0ms, collect 258ms, tests 19ms, environment 0ms, prepare 161ms)
+

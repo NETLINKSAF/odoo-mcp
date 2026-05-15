@@ -115,9 +115,9 @@
     },
     "T-7": {
       "title": "OdooClient class",
-      "status": "pending",
+      "status": "completed",
       "wave": 3,
-      "wired": null,
+      "wired": "n/a",
       "failures": 0,
       "depends_on": ["T-1", "T-5", "T-6"],
       "files": [
@@ -381,7 +381,7 @@
   },
 
   "execution": {
-    "current_wave": 2,
+    "current_wave": 3,
     "current_batch": [],
     "iteration": 0,
     "total_tokens": 0,
@@ -528,7 +528,19 @@
     { "ts": "2026-05-15T14:56:30Z", "event": "autonomous_fix", "issue": "biome useLiteralKeys + useTemplate lint errors in auth.ts (4 bracket-key accesses + 1 string concat)", "fix": "biome check --write --unsafe applied — same precedent as Wave 1 T-8" },
     { "ts": "2026-05-15T14:57:00Z", "event": "gate_run", "wave": 2, "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-2-lint.txt" },
     { "ts": "2026-05-15T14:57:00Z", "event": "gate_run", "wave": 2, "gate": "tsc", "status": "pass", "errors_now": 3, "baseline_errors": 6, "delta": -3, "evidence": "evidence/tests/wave-2-typecheck-{client,mcp}.txt", "note": "Wave 2 dropped tsc errors by 3 (auth.js barrel target now exists; 1 client error remaining = T-7 client.js, 2 mcp errors = T-22 server.js)." },
-    { "ts": "2026-05-15T14:57:00Z", "event": "gate_run", "wave": 2, "gate": "vitest", "status": "pass", "tests": "29/29 (added auth.test.ts: 10 tests)", "evidence": "evidence/tests/wave-2-tests.txt" }
+    { "ts": "2026-05-15T14:57:00Z", "event": "gate_run", "wave": 2, "gate": "vitest", "status": "pass", "tests": "29/29 (added auth.test.ts: 10 tests)", "evidence": "evidence/tests/wave-2-tests.txt" },
+    { "ts": "2026-05-15T14:57:30Z", "event": "wave_commit", "wave": 2, "sha": "3715e6b", "files": 9, "note": "Atomic commit: auth.ts + auth.test.ts + state.json + 6 evidence files." },
+    { "ts": "2026-05-15T14:58:00Z", "event": "integration_smoke_skipped", "wave": 2, "reason": "integration_cmd is null in state.json.quality_gates — no integration runner configured for v0. Logged per skill warning requirement." },
+    { "ts": "2026-05-15T14:58:30Z", "event": "security_review", "wave": 2, "findings": { "critical": 0, "high": 1, "medium": 2 }, "evidence": "evidence/security-review-wave-2.md", "note": "Auth surface review found 1 HIGH (SSRF — upstream-mitigated by T-9), 2 MEDIUM (traceback handling → T-11; auth-retry brute-force → accepted for v0). No blocking issues; no debugger dispatch." },
+    { "ts": "2026-05-15T14:58:30Z", "event": "wired_verification_skipped", "wave": 2, "reason": "T-6 is interior auth library (wired=n/a). Barrel re-export `export * from './auth.js'` in src/index.ts already pre-existed; tsc resolves it now that auth.ts is created. No grep verification needed for n/a-wired tasks." },
+    { "ts": "2026-05-15T14:58:30Z", "event": "wave_completed", "wave": 2, "task_count": 1, "duration_min": 8 },
+    { "ts": "2026-05-15T14:59:00Z", "event": "wave_started", "wave": 3, "pre_wave_sha": "3715e6b", "pending_task_count": 6, "task_ids": ["T-7", "T-9", "T-10", "T-11", "T-12", "T-13"] },
+    { "ts": "2026-05-15T14:59:00Z", "event": "autonomous_decision", "wave": 3, "issue": "odoo-mcp tasks (T-9..T-13) import from @netlinks/odoo-client which requires dist/index.d.ts. The barrel index.ts re-exports './client.js' (T-7); without client.ts, dist build fails. Five parallel agents would all hit the same TS2307 wall.", "decision": "Sub-batch wave 3: (1) T-7 single, (2) build odoo-client dist, (3) T-9/T-10/T-11 parallel, (4) T-12/T-13 parallel. Trades 1 round of parallelism for a clean dist boundary." },
+    { "ts": "2026-05-15T15:05:00Z", "event": "task_completed", "task_id": "T-7", "files": ["packages/odoo-client/src/client.ts", "packages/odoo-client/tests/client.test.ts"], "lines": "client:316 client.test:406", "test_result": "18 new tests passing (47/47 total)", "design_notes": "compact() helper strips undefined kwargs. probe() uses Promise.allSettled over searchRead/read methods. requireSession() private guard for ORM gating." },
+    { "ts": "2026-05-15T15:05:30Z", "event": "autonomous_fix", "issue": "biome useLiteralKeys / useTemplate in client.ts", "fix": "biome check --write --unsafe" },
+    { "ts": "2026-05-15T15:06:00Z", "event": "gate_run", "wave": 3, "sub_batch": "3a (T-7 only)", "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-3a-lint.txt" },
+    { "ts": "2026-05-15T15:06:00Z", "event": "gate_run", "wave": 3, "sub_batch": "3a", "gate": "tsc", "status": "pass", "errors_now": 2, "baseline_errors": 6, "delta": -4, "evidence": "evidence/tests/wave-3a-typecheck-{client,mcp}.txt", "note": "Wave 3a: client.ts created → client tsc 0 errors. Only T-22 ./server.js errors remain (2)." },
+    { "ts": "2026-05-15T15:06:00Z", "event": "gate_run", "wave": 3, "sub_batch": "3a", "gate": "vitest", "status": "pass", "tests": "47/47 (added client.test.ts: 18)", "evidence": "evidence/tests/wave-3a-tests.txt" }
   ],
 
   "security": {
@@ -537,8 +549,8 @@
     "threat_model_status": "completed",
     "findings": {
       "critical": 0,
-      "high": 4,
-      "medium": 6
+      "high": 5,
+      "medium": 8
     }
   },
 
