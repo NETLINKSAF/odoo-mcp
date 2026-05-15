@@ -1,11 +1,11 @@
 import {
-  OdooError,
+  OdooAccessError,
   OdooAuthError,
+  OdooConnectionError,
+  OdooError,
+  OdooMissingError,
   OdooUserError,
   OdooValidationError,
-  OdooAccessError,
-  OdooMissingError,
-  OdooConnectionError,
 } from './errors.js';
 
 export interface JsonRpcRequest {
@@ -32,7 +32,15 @@ function nextId(): number {
   return ++_requestId;
 }
 
-const ERROR_MAP: Record<string, new (message: string, model?: string, method?: string, traceback?: string) => OdooError> = {
+const ERROR_MAP: Record<
+  string,
+  new (
+    message: string,
+    model?: string,
+    method?: string,
+    traceback?: string,
+  ) => OdooError
+> = {
   'odoo.exceptions.UserError': OdooUserError,
   'odoo.exceptions.ValidationError': OdooValidationError,
   'odoo.exceptions.AccessError': OdooAccessError,

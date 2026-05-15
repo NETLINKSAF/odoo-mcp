@@ -19,53 +19,8 @@
     34 34 │       return cloned;
   
 
-./packages/odoo-client/src/rpc.ts organizeImports ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  × Import statements could be sorted:
-  
-      1   1 │   import {
-      2     │ - ··OdooError,
-          2 │ + ··OdooAccessError,
-      3   3 │     OdooAuthError,
-      4     │ - ··OdooUserError,
-      5     │ - ··OdooValidationError,
-      6     │ - ··OdooAccessError,
-      7     │ - ··OdooMissingError,
-      8     │ - ··OdooConnectionError,
-          4 │ + ··OdooConnectionError,
-          5 │ + ··OdooError,
-          6 │ + ··OdooMissingError,
-          7 │ + ··OdooUserError,
-          8 │ + ··OdooValidationError,
-      9   9 │   } from './errors.js';
-     10  10 │   
-  
-
-./packages/odoo-client/src/rpc.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  × Formatter would have printed the following content:
-  
-     33  33 │   }
-     34  34 │   
-     35     │ - const·ERROR_MAP:·Record<string,·new·(message:·string,·model?:·string,·method?:·string,·traceback?:·string)·=>·OdooError>·=·{
-         35 │ + const·ERROR_MAP:·Record<
-         36 │ + ··string,
-         37 │ + ··new·(
-         38 │ + ····message:·string,
-         39 │ + ····model?:·string,
-         40 │ + ····method?:·string,
-         41 │ + ····traceback?:·string,
-         42 │ + ··)·=>·OdooError
-         43 │ + >·=·{
-     36  44 │     'odoo.exceptions.UserError': OdooUserError,
-     37  45 │     'odoo.exceptions.ValidationError': OdooValidationError,
-  
-
-Skipped 1 suggested fixes.
-If you wish to apply the suggested (unsafe) fixes, use the command biome check --fix --unsafe
-
-Checked 7 files in 2ms. No fixes applied.
-Found 3 errors.
+Checked 7 files in 1985µs. No fixes applied.
+Found 1 error.
 check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   × Some errors were emitted while running checks.
