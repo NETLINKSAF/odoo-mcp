@@ -28,9 +28,16 @@ export function registerIntrospectTool(
   server.tool('odoo_fields_get', async (args: Record<string, unknown>) => {
     const start = Date.now();
 
-    // Step 1: parse with Zod schema
+    // Step 1: parse with Zod schema (model regex enforced via MODEL_NAME)
     const parsed = fieldsGetSchema.safeParse(args);
     if (!parsed.success) {
+      logger.toolCall({
+        tool: 'odoo_fields_get',
+        args_sanitized: sanitizeArgs('odoo_fields_get', args),
+        latency_ms: Date.now() - start,
+        status: 'error',
+        error: 'InputValidationError',
+      });
       return inputValidationError(parsed.error.message);
     }
 
@@ -60,7 +67,29 @@ export function registerIntrospectTool(
             ],
           };
         }
-        throw e;
+        // Non-OdooError from company validation — log and return as InternalError.
+        const message = e instanceof Error ? e.message : String(e);
+        const latency_ms = Date.now() - start;
+        logger.toolCall({
+          tool: 'odoo_fields_get',
+          args_sanitized: sanitizeArgs('odoo_fields_get', args),
+          latency_ms,
+          status: 'error',
+          error: 'InternalError',
+        });
+        return {
+          isError: true as const,
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                error_type: 'InternalError',
+                message: 'unexpected error',
+                detail: message,
+              }),
+            },
+          ],
+        };
       }
     }
 
@@ -114,7 +143,29 @@ export function registerIntrospectTool(
           ],
         };
       }
-      throw e;
+      // Step 7: Non-OdooError — unexpected exception. Log + return as InternalError-shaped.
+      const message = e instanceof Error ? e.message : String(e);
+      const latency_ms = Date.now() - start;
+      logger.toolCall({
+        tool: 'odoo_fields_get',
+        args_sanitized: sanitizeArgs('odoo_fields_get', args),
+        latency_ms,
+        status: 'error',
+        error: 'InternalError',
+      });
+      return {
+        isError: true as const,
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              error_type: 'InternalError',
+              message: 'unexpected error',
+              detail: message,
+            }),
+          },
+        ],
+      };
     }
   });
 }

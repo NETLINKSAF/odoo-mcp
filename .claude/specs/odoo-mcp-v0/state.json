@@ -614,7 +614,12 @@
     { "ts": "2026-05-15T16:49:30Z", "event": "integration_smoke_skipped", "wave": 7, "reason": "integration_cmd null. Note: T-23 IS the smoke test but is manual-run only by spec design — not wired into the loop's integration_cmd." },
     { "ts": "2026-05-15T16:49:30Z", "event": "wave_completed", "wave": 7, "task_count": 2, "duration_min": 8, "tasks": ["T-23", "T-24"] },
     { "ts": "2026-05-15T16:50:00Z", "event": "spec_completed", "tasks_completed": 24, "tasks_total": 24, "wired_summary": { "yes": 6, "n/a": 18 }, "test_total": 233, "test_passing": 233, "tsc_errors": 0, "biome_status": "pass", "security_findings": { "critical": 0, "high": 6, "medium": 13 }, "note": "All 24 tasks complete, all gates pass, all wired statuses resolved. Ready for phase advancement to 'executed'." },
-    { "ts": "2026-05-15T16:50:00Z", "event": "phase_advanced", "from": "validated", "to": "executed", "note": "Spec implementation complete. Next phases: /spec-accept (acceptance testing), /spec-docs (user docs), /spec-release." }
+    { "ts": "2026-05-15T16:50:00Z", "event": "phase_advanced", "from": "validated", "to": "executed", "note": "Spec implementation complete. Next phases: /spec-accept (acceptance testing), /spec-docs (user docs), /spec-release." },
+    { "ts": "2026-05-15T17:00:00Z", "event": "spec_accept_first_pass", "verdict": "acceptor=ACCEPTED, user=request_changes", "note": "Acceptor verified 63/63 EARS criteria and recommended ACCEPT with fix_effort=0. User chose 'fix all issues' instead of accepting — wants deferred security findings + doc gaps + dead code addressed before formal accept." },
+    { "ts": "2026-05-15T17:15:00Z", "event": "hardening_pass", "scope": ["F-002 MODEL_NAME/METHOD_NAME at schema level (Zod regex on all 9 schemas)", "F-003 sanitizeArgs extended to odoo_execute + odoo_call_action with generic deep-redaction", "F-004 logger.toolCall on validation early-return in execute/action/introspect/report", "F-005 non-OdooError exceptions caught + logged as InternalError instead of re-thrown (all 5 tool handlers)", "Deleted OdooClient.probe() dead code + 4 associated tests", "Named REQUEST_TIMEOUT_MS=30_000 in rpc.ts (referenced from auth.ts)", "Named DEFAULT_SEARCH_LIMIT=80 in client.ts", "Named MODULE_PROBE_LIMIT=500 in probe.ts", "JSDoc added: 7 error classes, AuthStrategy interface, jsonRpc + JsonRpcRequest/Response, sanitizeArgs + PII_KEY_PATTERN/SANITIZED_TOOLS"], "test_delta": "+24 hardening tests, -4 probe tests, net +20 (was 233, now 253)" },
+    { "ts": "2026-05-15T17:15:30Z", "event": "gate_run", "gate": "biome", "status": "pass", "evidence": "evidence/tests/hardening-lint.txt" },
+    { "ts": "2026-05-15T17:15:30Z", "event": "gate_run", "gate": "tsc", "status": "pass", "errors": "0/0 (client+mcp)", "evidence": "evidence/tests/hardening-typecheck-{client,mcp}.txt" },
+    { "ts": "2026-05-15T17:15:30Z", "event": "gate_run", "gate": "vitest", "status": "pass", "tests": "253/253 (43 client + 210 mcp)", "evidence": "evidence/tests/hardening-tests-{client,mcp}.txt" }
   ],
 
   "security": {
@@ -629,7 +634,8 @@
   },
 
   "acceptance": {
-    "status": null,
-    "estimated_fix_rounds": null
+    "status": "not_accepted",
+    "estimated_fix_rounds": 1,
+    "first_pass_verdict": "ACCEPTED by acceptor (fix effort=0), but user requested all outstanding items be addressed before formal accept."
   }
 }

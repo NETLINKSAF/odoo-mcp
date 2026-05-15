@@ -23,6 +23,13 @@ export function registerReportTool(
         error_type: 'InputValidationError',
         message: parsed.error.message,
       };
+      logger.toolCall({
+        tool: toolName,
+        args_sanitized: sanitizeArgs(toolName, args as Record<string, unknown>),
+        latency_ms: Date.now() - t0,
+        status: 'error',
+        error: 'InputValidationError',
+      });
       return {
         isError: true,
         content: [{ type: 'text' as const, text: JSON.stringify(errorPayload) }],
@@ -87,7 +94,28 @@ export function registerReportTool(
         };
       }
 
-      throw e;
+      // Non-OdooError — unexpected exception. Log + return as InternalError-shaped.
+      const message = e instanceof Error ? e.message : String(e);
+      logger.toolCall({
+        tool: toolName,
+        args_sanitized: sanitizeArgs(toolName, args as Record<string, unknown>),
+        latency_ms,
+        status: 'error',
+        error: 'InternalError',
+      });
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              error_type: 'InternalError',
+              message: 'unexpected error',
+              detail: message,
+            }),
+          },
+        ],
+      };
     }
   });
 }

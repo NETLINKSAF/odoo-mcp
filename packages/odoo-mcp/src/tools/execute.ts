@@ -7,10 +7,6 @@ import { formatMcpError } from '../errors.js';
 import type { Logger } from '../logger.js';
 import { executeSchema } from './schemas.js';
 
-// Threat-model US-5 AC-9: safe identifier regexes
-const MODEL_RE = /^[a-z][a-z0-9_.]*$/;
-const METHOD_RE = /^[a-z_][a-z0-9_]*$/;
-
 function inputValidationError(message: string) {
   return {
     isError: true as const,
@@ -33,20 +29,22 @@ export function registerExecuteTool(
   server.tool('odoo_execute', async (args: Record<string, unknown>) => {
     const start = Date.now();
 
-    // Step 1: parse with Zod schema
+    // Step 1: parse with Zod schema (includes model + method regex via MODEL_NAME/METHOD_NAME)
     const parsed = executeSchema.safeParse(args);
     if (!parsed.success) {
+      logger.toolCall({
+        tool: 'odoo_execute',
+        args_sanitized: sanitizeArgs('odoo_execute', args),
+        latency_ms: Date.now() - start,
+        status: 'error',
+        error: 'InputValidationError',
+      });
       return inputValidationError(parsed.error.message);
     }
 
     const data = parsed.data;
 
-    // Step 2: threat-model US-5 AC-9 — validate model and method identifiers
-    if (!MODEL_RE.test(data.model) || !METHOD_RE.test(data.method)) {
-      return inputValidationError('model or method contains invalid characters');
-    }
-
-    // Step 3: validate company subset if provided
+    // Step 2: validate company subset if provided
     if (data.allowed_company_ids !== undefined) {
       try {
         validateCompanySubset(data.allowed_company_ids, session.allowedCompanyIds);
@@ -70,23 +68,45 @@ export function registerExecuteTool(
             ],
           };
         }
-        throw e;
+        // Non-OdooError from company validation — log and return as InternalError.
+        const message = e instanceof Error ? e.message : String(e);
+        const latency_ms = Date.now() - start;
+        logger.toolCall({
+          tool: 'odoo_execute',
+          args_sanitized: sanitizeArgs('odoo_execute', args),
+          latency_ms,
+          status: 'error',
+          error: 'InternalError',
+        });
+        return {
+          isError: true as const,
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                error_type: 'InternalError',
+                message: 'unexpected error',
+                detail: message,
+              }),
+            },
+          ],
+        };
       }
     }
 
-    // Step 4: build context
+    // Step 3: build context
     const context: Context = buildContext(session, {
       allowed_company_ids: data.allowed_company_ids,
       active_company_id: data.active_company_id,
     });
 
-    // Step 5: call client.execute
+    // Step 4: call client.execute
     try {
       const result = await client.execute(data.model, data.method, data.args, data.kwargs, context);
 
       const latency_ms = Date.now() - start;
 
-      // Step 6 & 7: return result and log
+      // Step 5 & 6: return result and log
       logger.toolCall({
         tool: 'odoo_execute',
         args_sanitized: sanitizeArgs('odoo_execute', args),
@@ -104,7 +124,7 @@ export function registerExecuteTool(
         ],
       };
     } catch (e) {
-      // Step 8: on OdooError, format and return isError:true
+      // Step 7: on OdooError, format and return isError:true
       if (e instanceof OdooError) {
         const latency_ms = Date.now() - start;
         logger.toolCall({
@@ -124,7 +144,29 @@ export function registerExecuteTool(
           ],
         };
       }
-      throw e;
+      // Step 8: Non-OdooError — unexpected exception. Log + return as InternalError-shaped.
+      const message = e instanceof Error ? e.message : String(e);
+      const latency_ms = Date.now() - start;
+      logger.toolCall({
+        tool: 'odoo_execute',
+        args_sanitized: sanitizeArgs('odoo_execute', args),
+        latency_ms,
+        status: 'error',
+        error: 'InternalError',
+      });
+      return {
+        isError: true as const,
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              error_type: 'InternalError',
+              message: 'unexpected error',
+              detail: message,
+            }),
+          },
+        ],
+      };
     }
   });
 }

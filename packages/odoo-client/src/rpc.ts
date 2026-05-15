@@ -8,6 +8,14 @@ import {
   OdooValidationError,
 } from './errors.js';
 
+/**
+ * Per-request abort threshold. Aligned with Odoo's typical worker timeout
+ * envelope; longer waits indicate the request is unrecoverable rather than slow.
+ * US-8 AC-7.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Wire shape of a single Odoo JSON-RPC request envelope. */
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
   method: 'call';
@@ -15,6 +23,7 @@ export interface JsonRpcRequest {
   params: Record<string, unknown>;
 }
 
+/** Wire shape of an Odoo JSON-RPC response envelope. Exactly one of `result`/`error` is populated. */
 export interface JsonRpcResponse {
   jsonrpc: '2.0';
   id: number;
@@ -47,6 +56,12 @@ const ERROR_MAP: Record<
   'odoo.exceptions.MissingError': OdooMissingError,
 };
 
+/**
+ * Single-request transport for Odoo's JSON-RPC stdio surface. Composes the
+ * envelope, posts to `${url}${endpoint}`, applies REQUEST_TIMEOUT_MS, and maps
+ * server faults onto the typed OdooError hierarchy. Caller passes optional
+ * `headers` for cookie/session-id injection.
+ */
 export async function jsonRpc(
   url: string,
   endpoint: string,
@@ -63,7 +78,7 @@ export async function jsonRpc(
   };
 
   const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), 30_000);
+  const timeoutHandle = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   let response: Response;
   try {

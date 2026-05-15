@@ -180,6 +180,26 @@ describe('Zod parse failure', () => {
     expect(payload.error_type).toBe('InputValidationError');
     expect(clientMock.fieldsGet).not.toHaveBeenCalled();
   });
+
+  it('logs toolCall with status error and InputValidationError on Zod failure (F-004)', async () => {
+    const handler = serverMock.getHandler();
+    await handler({});
+    expect(loggerMock.toolCall).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: 'odoo_fields_get', status: 'error', error: 'InputValidationError' }),
+    );
+  });
+
+  it('uppercase model → isError:true with InputValidationError (model regex)', async () => {
+    const handler = serverMock.getHandler();
+    const response = await handler({ model: 'Res.Partner' }) as {
+      isError: boolean;
+      content: Array<{ type: string; text: string }>;
+    };
+    expect(response.isError).toBe(true);
+    const payload = JSON.parse(response.content[0].text);
+    expect(payload.error_type).toBe('InputValidationError');
+    expect(payload.message).toContain('model must match');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -202,15 +222,34 @@ describe('company subset validation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Non-OdooError re-thrown
+// F-005: non-OdooError caught + logged + returns isError with InternalError
 // ---------------------------------------------------------------------------
 
-describe('non-OdooError is re-thrown', () => {
-  it('re-throws unexpected errors from client.fieldsGet', async () => {
+describe('non-OdooError caught and returned as InternalError (F-005)', () => {
+  it('catches TypeError from client.fieldsGet and returns isError:true with InternalError', async () => {
     const networkError = new TypeError('fetch failed');
     (clientMock.fieldsGet as ReturnType<typeof vi.fn>).mockRejectedValueOnce(networkError);
     const handler = serverMock.getHandler();
-    await expect(handler({ model: 'res.partner' })).rejects.toThrow('fetch failed');
+    const response = await handler({ model: 'res.partner' }) as {
+      isError: boolean;
+      content: Array<{ type: string; text: string }>;
+    };
+
+    expect(response.isError).toBe(true);
+    const payload = JSON.parse(response.content[0].text);
+    expect(payload.error_type).toBe('InternalError');
+    expect(payload.message).toBe('unexpected error');
+    expect(payload.detail).toBe('fetch failed');
+  });
+
+  it('logs toolCall with status error and InternalError on non-OdooError (F-005)', async () => {
+    const networkError = new TypeError('fetch failed');
+    (clientMock.fieldsGet as ReturnType<typeof vi.fn>).mockRejectedValueOnce(networkError);
+    const handler = serverMock.getHandler();
+    await handler({ model: 'res.partner' });
+    expect(loggerMock.toolCall).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: 'odoo_fields_get', status: 'error', error: 'InternalError' }),
+    );
   });
 });
 

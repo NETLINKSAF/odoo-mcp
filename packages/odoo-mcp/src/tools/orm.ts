@@ -95,7 +95,28 @@ async function executeHandler<T>(
       });
       return { content: [{ type: 'text', text: JSON.stringify(formatted) }], isError: true };
     }
-    throw e;
+    // Non-OdooError — unexpected exception. Log + return as InternalError-shaped.
+    const message = e instanceof Error ? e.message : String(e);
+    logger.toolCall({
+      tool,
+      args_sanitized: sanitizeArgs(tool, args as Record<string, unknown>),
+      latency_ms: Date.now() - t0,
+      status: 'error',
+      error: 'InternalError',
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            error_type: 'InternalError',
+            message: 'unexpected error',
+            detail: message,
+          }),
+        },
+      ],
+      isError: true,
+    };
   }
 }
 

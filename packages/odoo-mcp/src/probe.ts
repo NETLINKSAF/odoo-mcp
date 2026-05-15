@@ -4,6 +4,12 @@ import type { OdooClient, ProbeResult } from '@netlinks/odoo-client';
 // Minimal ambient declaration — avoids @types/node dependency.
 declare const process: { stderr: { write: (data: string) => boolean } };
 
+// Upper bound on the modules-installed query. Typical Odoo deployments have
+// 100-300 installed modules; 500 covers the largest production instances
+// while still avoiding unbounded payloads if Odoo's search_read default ever
+// changes.
+const MODULE_PROBE_LIMIT = 500;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -94,7 +100,7 @@ export async function runProbe(client: OdooClient): Promise<ProbeResult> {
     // 1. modules
     client
       .searchRead('ir.module.module', [['state', '=', 'installed']], ['name', 'version'], {
-        limit: 500,
+        limit: MODULE_PROBE_LIMIT,
       })
       .then((rows) =>
         rows.map((r) => ({

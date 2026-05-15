@@ -158,6 +158,16 @@ describe('odoo_run_report handler', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error_type).toBe('InputValidationError');
     });
+
+    it('logs status:error with InputValidationError on Zod failure (F-004)', async () => {
+      const { mockLogger, callHandler } = buildMocks();
+
+      await callHandler({ doc_ids: [1] }); // missing report_id
+
+      expect(mockLogger.toolCall).toHaveBeenCalledWith(
+        expect.objectContaining({ tool: 'odoo_run_report', status: 'error', error: 'InputValidationError' }),
+      );
+    });
   });
 
   describe('Company subset validation', () => {
@@ -257,6 +267,35 @@ describe('odoo_run_report handler', () => {
       expect(result.isError).toBe(false);
       const [reportId] = mockClient.runReport.mock.calls[0] as [string, number[], unknown];
       expect(reportId).toBe('account.report_invoice');
+    });
+  });
+
+  describe('F-005: non-OdooError caught and returned as InternalError', () => {
+    it('catches TypeError from client.runReport and returns isError:true with InternalError', async () => {
+      const { mockClient, callHandler } = buildMocks();
+      mockClient.runReport.mockRejectedValueOnce(new TypeError('connection reset'));
+
+      const result = await callHandler({ report_id: 1, doc_ids: [1] }) as {
+        isError: boolean;
+        content: Array<{ type: string; text: string }>;
+      };
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error_type).toBe('InternalError');
+      expect(parsed.message).toBe('unexpected error');
+      expect(parsed.detail).toBe('connection reset');
+    });
+
+    it('logs toolCall with status error and InternalError on non-OdooError', async () => {
+      const { mockClient, mockLogger, callHandler } = buildMocks();
+      mockClient.runReport.mockRejectedValueOnce(new TypeError('connection reset'));
+
+      await callHandler({ report_id: 1, doc_ids: [1] });
+
+      expect(mockLogger.toolCall).toHaveBeenCalledWith(
+        expect.objectContaining({ tool: 'odoo_run_report', status: 'error', error: 'InternalError' }),
+      );
     });
   });
 });

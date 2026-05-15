@@ -1,12 +1,25 @@
 import { z } from 'zod';
 
+// Threat-model US-5 AC-9 (extended to all tools as defense-in-depth):
+// Reject model names with characters that could escape Odoo's expected dotted_snake_case.
+const MODEL_NAME = z
+  .string()
+  .min(1)
+  .regex(/^[a-z][a-z0-9_.]*$/, 'model must match /^[a-z][a-z0-9_.]*$/');
+
+// Reject method/action names with characters beyond safe snake_case identifiers.
+const METHOD_NAME = z
+  .string()
+  .min(1)
+  .regex(/^[a-z_][a-z0-9_]*$/, 'method must match /^[a-z_][a-z0-9_]*$/');
+
 const companyContext = {
   allowed_company_ids: z.array(z.number().int().positive()).optional(),
   active_company_id: z.number().int().positive().optional(),
 };
 
 export const searchReadSchema = z.object({
-  model: z.string().min(1),
+  model: MODEL_NAME,
   domain: z.array(z.unknown()).default([]),
   fields: z.array(z.string()).default([]),
   limit: z.number().int().positive().default(80),
@@ -18,7 +31,7 @@ export const searchReadSchema = z.object({
 export type SearchReadInput = z.infer<typeof searchReadSchema>;
 
 export const readSchema = z.object({
-  model: z.string().min(1),
+  model: MODEL_NAME,
   ids: z.array(z.number().int().positive()).min(1),
   fields: z.array(z.string()).default([]),
   ...companyContext,
@@ -27,7 +40,7 @@ export const readSchema = z.object({
 export type ReadInput = z.infer<typeof readSchema>;
 
 export const createSchema = z.object({
-  model: z.string().min(1),
+  model: MODEL_NAME,
   values: z.union([z.record(z.unknown()), z.array(z.record(z.unknown()))]),
   ...companyContext,
 });
@@ -35,7 +48,7 @@ export const createSchema = z.object({
 export type CreateInput = z.infer<typeof createSchema>;
 
 export const writeSchema = z.object({
-  model: z.string().min(1),
+  model: MODEL_NAME,
   ids: z.array(z.number().int().positive()).min(1),
   values: z.record(z.unknown()),
   ...companyContext,
@@ -44,7 +57,7 @@ export const writeSchema = z.object({
 export type WriteInput = z.infer<typeof writeSchema>;
 
 export const unlinkSchema = z.object({
-  model: z.string().min(1),
+  model: MODEL_NAME,
   ids: z.array(z.number().int().positive()).min(1),
   ...companyContext,
 });
@@ -52,7 +65,7 @@ export const unlinkSchema = z.object({
 export type UnlinkInput = z.infer<typeof unlinkSchema>;
 
 export const searchCountSchema = z.object({
-  model: z.string().min(1),
+  model: MODEL_NAME,
   domain: z.array(z.unknown()).default([]),
   ...companyContext,
 });
@@ -60,8 +73,8 @@ export const searchCountSchema = z.object({
 export type SearchCountInput = z.infer<typeof searchCountSchema>;
 
 export const executeSchema = z.object({
-  model: z.string().min(1),
-  method: z.string().min(1),
+  model: MODEL_NAME,
+  method: METHOD_NAME,
   args: z.array(z.unknown()).default([]),
   kwargs: z.record(z.unknown()).default({}),
   ...companyContext,
@@ -78,9 +91,9 @@ export const runReportSchema = z.object({
 export type RunReportInput = z.infer<typeof runReportSchema>;
 
 export const callActionSchema = z.object({
-  model: z.string().min(1),
+  model: MODEL_NAME,
   ids: z.array(z.number().int().positive()).min(1),
-  action_name: z.string().min(1),
+  action_name: METHOD_NAME,
   context: z.record(z.unknown()).optional(),
   ...companyContext,
 });
@@ -88,7 +101,7 @@ export const callActionSchema = z.object({
 export type CallActionInput = z.infer<typeof callActionSchema>;
 
 export const fieldsGetSchema = z.object({
-  model: z.string().min(1),
+  model: MODEL_NAME,
   attributes: z.array(z.string()).optional(),
   ...companyContext,
 });

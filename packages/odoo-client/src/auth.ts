@@ -2,9 +2,22 @@
 declare const process: { stderr: { write: (data: string) => boolean } };
 
 import { OdooAuthError, OdooConnectionError, OdooError } from './errors.js';
-import { type JsonRpcRequest, jsonRpc } from './rpc.js';
+import { type JsonRpcRequest, REQUEST_TIMEOUT_MS, jsonRpc } from './rpc.js';
 import type { Context, OdooConfig, OdooSession } from './types.js';
 
+/**
+ * Pluggable Odoo authentication interface. Two strategies ship out of the
+ * box: ApiKeyAuthStrategy (preferred) and SessionCookieAuthStrategy (fallback).
+ *
+ * `authenticate(config)` performs the login round-trip and returns the populated
+ * OdooSession.
+ *
+ * `applyAuth(request, session)` is a structural extension point. Both shipped
+ * strategies return the request unchanged because JsonRpcRequest carries no
+ * `headers` field — cookie/session-id injection happens at the call site,
+ * via the headers arg to `jsonRpc()`. Custom strategies that want to mutate
+ * the request envelope itself can do so here.
+ */
 export interface AuthStrategy {
   authenticate(config: OdooConfig): Promise<OdooSession>;
   applyAuth(request: JsonRpcRequest, session: OdooSession): JsonRpcRequest;
@@ -87,7 +100,7 @@ export class SessionCookieAuthStrategy implements AuthStrategy {
     };
 
     const controller = new AbortController();
-    const timeoutHandle = setTimeout(() => controller.abort(), 30_000);
+    const timeoutHandle = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     let response: Response;
     try {

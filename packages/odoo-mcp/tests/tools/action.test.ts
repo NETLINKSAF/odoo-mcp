@@ -228,6 +228,34 @@ describe('Input validation', () => {
     const payload = JSON.parse(response.content[0].text);
     expect(payload.error_type).toBe('InputValidationError');
   });
+
+  it('uppercase model → isError:true with InputValidationError (model regex)', async () => {
+    const handler = serverMock.getHandler();
+    const response = await handler({
+      model: 'Res.Partner',
+      ids: [1],
+      action_name: 'action_open_partners',
+    }) as { isError: boolean; content: Array<{ type: string; text: string }> };
+
+    expect(response.isError).toBe(true);
+    const payload = JSON.parse(response.content[0].text);
+    expect(payload.error_type).toBe('InputValidationError');
+    expect(payload.message).toContain('model must match');
+  });
+
+  it('invalid action_name → isError:true with InputValidationError (method regex)', async () => {
+    const handler = serverMock.getHandler();
+    const response = await handler({
+      model: 'res.partner',
+      ids: [1],
+      action_name: 'My-Action',
+    }) as { isError: boolean; content: Array<{ type: string; text: string }> };
+
+    expect(response.isError).toBe(true);
+    const payload = JSON.parse(response.content[0].text);
+    expect(payload.error_type).toBe('InputValidationError');
+    expect(payload.message).toContain('method must match');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -309,21 +337,75 @@ describe('Logging', () => {
       expect.objectContaining({ tool: 'odoo_call_action', status: 'error' }),
     );
   });
+
+  it('logs status:error with InputValidationError on Zod failure (F-004)', async () => {
+    const handler = serverMock.getHandler();
+    await handler({ model: 'res.partner' }); // missing ids and action_name
+
+    expect(loggerMock.toolCall).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: 'odoo_call_action', status: 'error', error: 'InputValidationError' }),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Non-OdooError re-thrown
+// F-005: non-OdooError caught + logged + returns isError with InternalError
 // ---------------------------------------------------------------------------
 
-describe('Non-OdooError propagation', () => {
-  it('non-OdooError thrown by client is re-thrown (not swallowed)', async () => {
+describe('non-OdooError caught and returned as InternalError (F-005)', () => {
+  it('catches plain Error from client.callAction and returns isError:true with InternalError', async () => {
     (clientMock.callAction as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('network failure'),
     );
     const handler = serverMock.getHandler();
+    const response = await handler({
+      model: 'res.partner',
+      ids: [1],
+      action_name: 'action_open_partners',
+    }) as { isError: boolean; content: Array<{ type: string; text: string }> };
 
-    await expect(
-      handler({ model: 'res.partner', ids: [1], action_name: 'action_open_partners' }),
-    ).rejects.toThrow('network failure');
+    expect(response.isError).toBe(true);
+    const payload = JSON.parse(response.content[0].text);
+    expect(payload.error_type).toBe('InternalError');
+    expect(payload.message).toBe('unexpected error');
+    expect(payload.detail).toBe('network failure');
+  });
+
+  it('logs toolCall with status error and InternalError on non-OdooError', async () => {
+    (clientMock.callAction as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('network failure'),
+    );
+    const handler = serverMock.getHandler();
+    await handler({ model: 'res.partner', ids: [1], action_name: 'action_open_partners' });
+
+    expect(loggerMock.toolCall).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: 'odoo_call_action', status: 'error', error: 'InternalError' }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-003: odoo_call_action args with PII keys are redacted in args_sanitized
+// ---------------------------------------------------------------------------
+
+describe('F-003: odoo_call_action sanitizes context containing PII keys', () => {
+  it('redacts token inside context when logging odoo_call_action', async () => {
+    const handler = serverMock.getHandler();
+    await handler({
+      model: 'res.partner',
+      ids: [1],
+      action_name: 'action_open_partners',
+      context: { token: 'abc123', lang: 'en_US' },
+    });
+
+    expect(loggerMock.toolCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: 'odoo_call_action',
+        status: 'ok',
+        args_sanitized: expect.objectContaining({
+          context: expect.objectContaining({ token: '[REDACTED]', lang: 'en_US' }),
+        }),
+      }),
+    );
   });
 });

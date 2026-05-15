@@ -7,11 +7,6 @@ import { formatMcpError } from '../errors.js';
 import type { Logger } from '../logger.js';
 import { callActionSchema } from './schemas.js';
 
-// Threat-model US-5 AC-9 analogue: action_name is dispatched as a method on
-// execute_kw, so unrestricted strings would let a caller invoke arbitrary
-// ORM methods (e.g. 'unlink') and bypass tool-shaped guardrails.
-const METHOD_RE = /^[a-z_][a-z0-9_]*$/;
-
 function inputValidationError(message: string) {
   return {
     isError: true as const,
@@ -34,19 +29,20 @@ export function registerActionTool(
   server.tool('odoo_call_action', async (args: Record<string, unknown>) => {
     const start = Date.now();
 
-    // Step 1: parse with Zod schema
+    // Step 1: parse with Zod schema (model + action_name regex enforced via MODEL_NAME/METHOD_NAME)
     const parsed = callActionSchema.safeParse(args);
     if (!parsed.success) {
+      logger.toolCall({
+        tool: 'odoo_call_action',
+        args_sanitized: sanitizeArgs('odoo_call_action', args),
+        latency_ms: Date.now() - start,
+        status: 'error',
+        error: 'InputValidationError',
+      });
       return inputValidationError(parsed.error.message);
     }
 
     const data = parsed.data;
-
-    // Step 1b: threat-model guard — reject method names with characters
-    // that could bypass the tool-shaped surface (analogous to US-5 AC-9).
-    if (!METHOD_RE.test(data.action_name)) {
-      return inputValidationError('action_name contains invalid characters');
-    }
 
     // Step 2: validate company subset if provided
     if (data.allowed_company_ids !== undefined) {
@@ -72,7 +68,29 @@ export function registerActionTool(
             ],
           };
         }
-        throw e;
+        // Non-OdooError from company validation — log and return as InternalError.
+        const message = e instanceof Error ? e.message : String(e);
+        const latency_ms = Date.now() - start;
+        logger.toolCall({
+          tool: 'odoo_call_action',
+          args_sanitized: sanitizeArgs('odoo_call_action', args),
+          latency_ms,
+          status: 'error',
+          error: 'InternalError',
+        });
+        return {
+          isError: true as const,
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                error_type: 'InternalError',
+                message: 'unexpected error',
+                detail: message,
+              }),
+            },
+          ],
+        };
       }
     }
 
@@ -132,7 +150,29 @@ export function registerActionTool(
           ],
         };
       }
-      throw e;
+      // Step 7: Non-OdooError — unexpected exception. Log + return as InternalError-shaped.
+      const message = e instanceof Error ? e.message : String(e);
+      const latency_ms = Date.now() - start;
+      logger.toolCall({
+        tool: 'odoo_call_action',
+        args_sanitized: sanitizeArgs('odoo_call_action', args),
+        latency_ms,
+        status: 'error',
+        error: 'InternalError',
+      });
+      return {
+        isError: true as const,
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              error_type: 'InternalError',
+              message: 'unexpected error',
+              detail: message,
+            }),
+          },
+        ],
+      };
     }
   });
 }

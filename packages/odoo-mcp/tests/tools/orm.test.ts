@@ -369,17 +369,35 @@ describe('odoo_search_count — valid call', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Non-OdooError re-thrown
+// F-005: non-OdooError caught + logged + returns isError with InternalError
 // ---------------------------------------------------------------------------
 
-describe('non-OdooError propagates', () => {
-  it('rethrows unexpected errors (not wrapped in isError)', async () => {
+describe('non-OdooError caught and returned as InternalError (F-005)', () => {
+  it('catches TypeError from client.searchRead and returns isError:true with InternalError', async () => {
     (clientMock.searchRead as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new TypeError('network failure'),
     );
 
-    await expect(
-      serverMock.handlers['odoo_search_read']({ model: 'res.partner' }),
-    ).rejects.toThrow(TypeError);
+    const response = (await serverMock.handlers['odoo_search_read']({
+      model: 'res.partner',
+    })) as { isError: boolean; content: Array<{ type: string; text: string }> };
+
+    expect(response.isError).toBe(true);
+    const payload = JSON.parse(response.content[0].text);
+    expect(payload.error_type).toBe('InternalError');
+    expect(payload.message).toBe('unexpected error');
+    expect(payload.detail).toBe('network failure');
+  });
+
+  it('logs toolCall with status error and InternalError on non-OdooError', async () => {
+    (clientMock.searchRead as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new TypeError('network failure'),
+    );
+
+    await serverMock.handlers['odoo_search_read']({ model: 'res.partner' });
+
+    expect(loggerMock.toolCall).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'error', error: 'InternalError' }),
+    );
   });
 });

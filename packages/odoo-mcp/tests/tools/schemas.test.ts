@@ -207,3 +207,37 @@ describe('AC-4: all 10 schemas exported', () => {
     expect(fieldsGetSchema).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// F-002: MODEL_NAME and METHOD_NAME regex enforcement at schema level
+// ---------------------------------------------------------------------------
+
+describe('F-002: model regex enforced at schema level', () => {
+  it('searchReadSchema rejects uppercase model (Res.Partner)', () => {
+    expect(() => searchReadSchema.parse({ model: 'Res.Partner' })).toThrow(ZodError);
+  });
+
+  it('searchReadSchema accepts valid dotted_snake_case model (res.partner)', () => {
+    expect(() => searchReadSchema.parse({ model: 'res.partner' })).not.toThrow();
+  });
+});
+
+describe('F-002: method regex enforced at schema level', () => {
+  it('executeSchema rejects method with hyphen (My-Method)', () => {
+    expect(() =>
+      executeSchema.parse({ model: 'res.partner', method: 'My-Method' }),
+    ).toThrow(ZodError);
+  });
+
+  it('callActionSchema rejects action_name with hyphen (My-Action)', () => {
+    expect(() =>
+      callActionSchema.parse({ model: 'res.partner', ids: [1], action_name: 'My-Action' }),
+    ).toThrow(ZodError);
+  });
+
+  it('executeSchema accepts valid snake_case method (do_something)', () => {
+    expect(() =>
+      executeSchema.parse({ model: 'res.partner', method: 'do_something' }),
+    ).not.toThrow();
+  });
+});

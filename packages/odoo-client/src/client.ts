@@ -1,14 +1,12 @@
 import { type AuthStrategy, createAuthStrategy } from './auth.js';
 import { OdooAuthError } from './errors.js';
 import { jsonRpc } from './rpc.js';
-import type { Context, Domain, OdooConfig, OdooRecord, OdooSession, ProbeResult } from './types.js';
+import type { Context, Domain, OdooConfig, OdooRecord, OdooSession } from './types.js';
 
 const CALL_KW = '/web/dataset/call_kw';
 
-function extractMessage(reason: unknown): string {
-  if (reason instanceof Error) return reason.message;
-  return String(reason);
-}
+// US-4 AC-9: searchRead applies an 80-row default to prevent unbounded payloads.
+const DEFAULT_SEARCH_LIMIT = 80;
 
 /** Remove undefined-valued keys from a shallow object, returning a new object */
 function compact(obj: Record<string, unknown>): Record<string, unknown> {
@@ -62,7 +60,7 @@ export class OdooClient {
     const { limit, offset, order, context } = options ?? {};
     const kwargs = compact({
       fields,
-      limit: limit ?? 80,
+      limit: limit ?? DEFAULT_SEARCH_LIMIT,
       offset,
       order,
       context,
@@ -208,115 +206,8 @@ export class OdooClient {
     });
     return result as Record<string, unknown>;
   }
-
-  // ---------------------------------------------------------------------------
-  // Probe
-  // ---------------------------------------------------------------------------
-
-  async probe(): Promise<ProbeResult> {
-    const session = this.requireSession();
-    const currentYear = new Date().getFullYear();
-
-    const [
-      modulesResult,
-      reportsResult,
-      serverActionsResult,
-      companiesResult,
-      currenciesResult,
-      fiscalYearResult,
-      languageResult,
-      localeResult,
-    ] = await Promise.allSettled([
-      // 1. modules
-      this.searchRead(
-        'ir.module.module',
-        [['state', '=', 'installed']],
-        ['name', 'latest_version'],
-      ).then((rows) =>
-        rows.map((r) => ({ name: r.name as string, version: r.latest_version as string })),
-      ),
-      // 2. reports
-      this.searchRead('ir.actions.report', [], ['report_name', 'model', 'report_type']),
-      // 3. serverActions
-      this.searchRead('ir.actions.server', [], ['name', 'model_id', 'type']).then((rows) =>
-        rows.map((r) => ({
-          name: r.name as string,
-          model: (r.model_id as [number, string])[1],
-          type: r.type as string,
-        })),
-      ),
-      // 4. companies
-      this.searchRead('res.company', [], ['name', 'currency_id']).then((rows) =>
-        rows.map((r) => ({
-          id: r.id,
-          name: r.name as string,
-          currency_id: r.currency_id as [number, string],
-        })),
-      ),
-      // 5. currencies
-      this.searchRead('res.currency', [], ['name', 'symbol']).then((rows) =>
-        rows.map((r) => ({
-          id: r.id,
-          name: r.name as string,
-          symbol: r.symbol as string,
-        })),
-      ),
-      // 6. fiscalYear — approximate using current calendar year
-      this.read(
-        'res.company',
-        [session.companyId],
-        ['fiscalyear_last_day', 'fiscalyear_last_month'],
-      ).then(() => ({
-        date_from: `${currentYear}-01-01`,
-        date_to: `${currentYear}-12-31`,
-      })),
-      // 7. language
-      this.read('res.users', [session.uid], ['lang']).then(
-        (rows) => (rows[0] as unknown as { lang: string }).lang,
-      ),
-      // 8. locale (timezone as proxy)
-      this.read('res.users', [session.uid], ['tz']).then(
-        (rows) => (rows[0] as unknown as { tz: string }).tz,
-      ),
-    ]);
-
-    return {
-      modules:
-        modulesResult.status === 'fulfilled'
-          ? modulesResult.value
-          : { error: extractMessage(modulesResult.reason) },
-      reports:
-        reportsResult.status === 'fulfilled'
-          ? (reportsResult.value as unknown as Array<{
-              report_name: string;
-              model: string;
-              report_type: string;
-            }>)
-          : { error: extractMessage(reportsResult.reason) },
-      serverActions:
-        serverActionsResult.status === 'fulfilled'
-          ? serverActionsResult.value
-          : { error: extractMessage(serverActionsResult.reason) },
-      companies:
-        companiesResult.status === 'fulfilled'
-          ? companiesResult.value
-          : { error: extractMessage(companiesResult.reason) },
-      currencies:
-        currenciesResult.status === 'fulfilled'
-          ? currenciesResult.value
-          : { error: extractMessage(currenciesResult.reason) },
-      fiscalYear:
-        fiscalYearResult.status === 'fulfilled'
-          ? fiscalYearResult.value
-          : { error: extractMessage(fiscalYearResult.reason) },
-      language:
-        languageResult.status === 'fulfilled'
-          ? languageResult.value
-          : { error: extractMessage(languageResult.reason) },
-      locale:
-        localeResult.status === 'fulfilled'
-          ? localeResult.value
-          : { error: extractMessage(localeResult.reason) },
-    };
-  }
 }
+// Note: capability probing is implemented in @netlinks/odoo-mcp's probe.ts
+// (the runProbe function) which uses this client's searchRead/execute methods.
+// An earlier probe() method on OdooClient was removed during v0.1 hardening
+// because it duplicated runProbe and was never called from the server path.
