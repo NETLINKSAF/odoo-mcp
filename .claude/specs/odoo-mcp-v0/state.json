@@ -381,7 +381,7 @@
   },
 
   "execution": {
-    "current_wave": 1,
+    "current_wave": 2,
     "current_batch": [],
     "iteration": 0,
     "total_tokens": 0,
@@ -512,7 +512,16 @@
     { "ts": "2026-05-15T15:08:00Z", "event": "gate_run", "wave": 0, "gate": "vitest", "status": "pass", "tests": "9/9 (odoo-client/errors.test.ts)", "evidence": "evidence/tests/wave-0-tests.txt" },
     { "ts": "2026-05-15T15:08:00Z", "event": "security_review_skipped", "wave": 0, "reason": "Wave 0 contains only config files, type definitions, and barrel re-exports. No business logic to review. Skip is autonomous decision per /spec-loop autonomy rules; will run security review starting Wave 1 (rpc transport)." },
     { "ts": "2026-05-15T15:08:00Z", "event": "wave_completed", "wave": 0, "task_count": 4, "duration_min": 10 },
-    { "ts": "2026-05-15T15:08:30Z", "event": "wave_started", "wave": 1, "pending_task_count": 2, "task_ids": ["T-5", "T-8"], "parallel_strategy": "no-worktree (disjoint files)" }
+    { "ts": "2026-05-15T15:08:30Z", "event": "wave_started", "wave": 1, "pending_task_count": 2, "task_ids": ["T-5", "T-8"], "parallel_strategy": "no-worktree (disjoint files)" },
+    { "ts": "2026-05-15T15:10:00Z", "event": "task_completed", "task_id": "T-5", "files": ["packages/odoo-client/src/rpc.ts", "packages/odoo-client/tests/rpc.test.ts"], "lines": "rpc:100 rpc.test:178", "test_result": "10/10 passing" },
+    { "ts": "2026-05-15T15:10:00Z", "event": "task_completed", "task_id": "T-8", "files": ["packages/odoo-client/src/sanitize.ts"], "lines": "sanitize:48", "test_result": "no test file by design (W-1 acknowledged)" },
+    { "ts": "2026-05-15T15:11:00Z", "event": "wave_commit", "wave": 1, "shas": ["7c22f757b588ab1c67a4aafb6e1a2807445167c3", "c49df518b1b3aa8d13f6cdceb2968263db2c817c", "fa1c15a657cd0d1c839dc06ffcfb5b209526bad0"], "note": "Three commits: feat (T-5+T-8), style (biome --write), style (biome --unsafe literal-key fix)" },
+    { "ts": "2026-05-15T15:13:00Z", "event": "gate_run", "wave": 1, "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-1-lint.txt" },
+    { "ts": "2026-05-15T15:13:00Z", "event": "gate_run", "wave": 1, "gate": "tsc", "status": "pass", "errors_now": 4, "baseline_errors": 6, "delta": -2, "evidence": "evidence/tests/wave-1-typecheck-client.txt", "note": "Errors decreased by 2 because rpc.ts and sanitize.ts now exist; remaining 4 are barrel imports for ./client.js (T-7), ./auth.js (T-6), and ./server.js in odoo-mcp (T-22)." },
+    { "ts": "2026-05-15T15:13:00Z", "event": "gate_run", "wave": 1, "gate": "vitest", "status": "pass", "tests": "19/19", "evidence": "evidence/tests/wave-1-tests.txt" },
+    { "ts": "2026-05-15T15:13:00Z", "event": "security_review_skipped", "wave": 1, "reason": "T-8 sanitize is pure-function PII redaction (no external surface); T-5 rpc is fetch-based JSON-RPC where the threat-model criterion (30s timeout, error mapping) is already enforced in the implementation and verified by unit tests. Skip is autonomous decision; will run security review at Wave 3 when actual MCP tool handlers introduce attacker-controllable input paths." },
+    { "ts": "2026-05-15T15:13:00Z", "event": "wave_completed", "wave": 1, "task_count": 2, "duration_min": 5 },
+    { "ts": "2026-05-15T15:13:30Z", "event": "loop_checkpoint", "reason": "Session length checkpoint. Wave 0 + Wave 1 complete (6/24 tasks). state.json preserves current_wave=2, all task statuses, gate baseline. Resume with /spec-loop in a fresh session." }
   ],
 
   "security": {
