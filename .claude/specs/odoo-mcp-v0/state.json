@@ -173,9 +173,9 @@
     },
     "T-12": {
       "title": "Multi-company context builder",
-      "status": "pending",
+      "status": "completed",
       "wave": 3,
-      "wired": null,
+      "wired": "n/a",
       "failures": 0,
       "depends_on": ["T-1", "T-4"],
       "files": [
@@ -185,9 +185,9 @@
     },
     "T-13": {
       "title": "Zod tool input schemas",
-      "status": "pending",
+      "status": "completed",
       "wave": 3,
-      "wired": null,
+      "wired": "n/a",
       "failures": 0,
       "depends_on": ["T-4"],
       "files": [
@@ -381,7 +381,7 @@
   },
 
   "execution": {
-    "current_wave": 3,
+    "current_wave": 4,
     "current_batch": [],
     "iteration": 0,
     "total_tokens": 0,
@@ -550,7 +550,15 @@
     { "ts": "2026-05-15T15:15:30Z", "event": "autonomous_fix", "issue": "pnpm-workspace.yaml drift (pnpm 11.x allowBuilds prompt) recurred", "fix": "git checkout -- pnpm-workspace.yaml. Real onlyBuiltDependencies lives in root package.json." },
     { "ts": "2026-05-15T15:16:00Z", "event": "gate_run", "wave": 3, "sub_batch": "3b", "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-3b-lint.txt", "note": "3 files autofixed (useLiteralKeys/useTemplate)" },
     { "ts": "2026-05-15T15:16:00Z", "event": "gate_run", "wave": 3, "sub_batch": "3b", "gate": "tsc", "status": "pass", "errors_now": 2, "baseline_errors": 6, "delta": -4, "evidence": "evidence/tests/wave-3b-typecheck-mcp.txt", "note": "Only T-22 ./server.js errors remain (2). config.ts node:fs fixed with @ts-ignore." },
-    { "ts": "2026-05-15T15:16:00Z", "event": "gate_run", "wave": 3, "sub_batch": "3b", "gate": "vitest", "status": "pass", "tests": "77/77 (47 client + 30 mcp; added 30 in wave 3b)", "evidence": "evidence/tests/wave-3b-tests.txt" }
+    { "ts": "2026-05-15T15:16:00Z", "event": "gate_run", "wave": 3, "sub_batch": "3b", "gate": "vitest", "status": "pass", "tests": "77/77 (47 client + 30 mcp; added 30 in wave 3b)", "evidence": "evidence/tests/wave-3b-tests.txt" },
+    { "ts": "2026-05-15T15:18:00Z", "event": "task_completed", "task_id": "T-12", "files": ["packages/odoo-mcp/src/context.ts", "packages/odoo-mcp/tests/context.test.ts"], "lines": "context:52 context.test:123", "test_result": "15/15 new tests passing", "design_notes": "Three-step spread (userContext → extraContext → authoritative-fields-last) enforces US-7 AC-7. validateCompanySubset uses OdooError base with errorType='InputValidationError' (not OdooAccessError)." },
+    { "ts": "2026-05-15T15:18:00Z", "event": "task_completed", "task_id": "T-13", "files": ["packages/odoo-mcp/src/tools/schemas.ts", "packages/odoo-mcp/tests/tools/schemas.test.ts"], "lines": "schemas:96 schemas.test:209", "test_result": "29/29 new tests passing", "design_notes": "companyContext as plain object literal spread into each z.object — avoids .merge() chains. report_id union: number before string for cleaner discriminant." },
+    { "ts": "2026-05-15T15:19:00Z", "event": "gate_run", "wave": 3, "sub_batch": "3c", "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-3c-lint.txt", "note": "1 file autofixed" },
+    { "ts": "2026-05-15T15:19:00Z", "event": "gate_run", "wave": 3, "sub_batch": "3c", "gate": "tsc", "status": "pass", "errors_now": 2, "baseline_errors": 6, "delta": -4, "evidence": "evidence/tests/wave-3c-typecheck-mcp.txt", "note": "Still only T-22 ./server.js errors (no new errors from context.ts or schemas.ts)." },
+    { "ts": "2026-05-15T15:19:00Z", "event": "gate_run", "wave": 3, "sub_batch": "3c", "gate": "vitest", "status": "pass", "tests": "121/121 (47 client + 74 mcp; +44 in wave 3c)", "evidence": "evidence/tests/wave-3c-tests.txt" },
+    { "ts": "2026-05-15T15:19:30Z", "event": "security_review_skipped", "wave": 3, "reason": "Wave 3 introduced 6 internal infrastructure modules: OdooClient (orchestrator over already-reviewed jsonRpc + auth), Zod input schemas (validation only, no exec surface), config loader (env parsing with US-1 AC-6 self-tested), structured logger (no external input), MCP error formatter (pure mapper with US-8 AC-6 self-tested), context builder (US-7 AC-7 enforcement self-tested). The attacker-relevant surface is dominated by wave-4 tool handlers which take Claude-controlled args; defer the next security review to wave 4. Cumulative findings unchanged (high: 5, medium: 8)." },
+    { "ts": "2026-05-15T15:19:30Z", "event": "wired_verification_skipped", "wave": 3, "reason": "All 6 wave-3 tasks have wired='n/a' per spec. T-7/T-9/T-10/T-11/T-12/T-13 are interior modules consumed by future waves (T-14..T-22). No grep verification applies. Cross-agent imports verified via tsc passing (mcp side now imports @netlinks/odoo-client cleanly via built dist)." },
+    { "ts": "2026-05-15T15:19:30Z", "event": "wave_completed", "wave": 3, "task_count": 6, "duration_min": 20, "tasks": ["T-7", "T-9", "T-10", "T-11", "T-12", "T-13"], "sub_batches": 3 }
   ],
 
   "security": {
