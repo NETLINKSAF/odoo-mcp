@@ -198,7 +198,7 @@
       "title": "ORM tool handlers",
       "status": "completed",
       "wave": 4,
-      "wired": "pending",
+      "wired": "yes",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-7", "T-8", "T-11", "T-12", "T-13"],
       "files": [
@@ -210,7 +210,7 @@
       "title": "Execute tool handler",
       "status": "completed",
       "wave": 4,
-      "wired": "pending",
+      "wired": "yes",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
       "files": [
@@ -222,7 +222,7 @@
       "title": "Report tool handler",
       "status": "completed",
       "wave": 4,
-      "wired": "pending",
+      "wired": "yes",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
       "files": [
@@ -234,7 +234,7 @@
       "title": "Action tool handler",
       "status": "completed",
       "wave": 4,
-      "wired": "pending",
+      "wired": "yes",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
       "files": [
@@ -246,7 +246,7 @@
       "title": "Fields-get tool handler",
       "status": "completed",
       "wave": 4,
-      "wired": "pending",
+      "wired": "yes",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
       "files": [
@@ -268,9 +268,9 @@
     },
     "T-20": {
       "title": "MCP resource publisher",
-      "status": "pending",
+      "status": "completed",
       "wave": 5,
-      "wired": null,
+      "wired": "n/a",
       "failures": 0,
       "depends_on": ["T-1", "T-4", "T-19"],
       "files": [
@@ -279,9 +279,9 @@
     },
     "T-21": {
       "title": "Tool registration orchestrator",
-      "status": "pending",
+      "status": "completed",
       "wave": 5,
-      "wired": null,
+      "wired": "pending",
       "failures": 0,
       "depends_on": ["T-14", "T-15", "T-16", "T-17", "T-18"],
       "files": [
@@ -381,7 +381,7 @@
   },
 
   "execution": {
-    "current_wave": 5,
+    "current_wave": 6,
     "current_batch": [],
     "iteration": 0,
     "total_tokens": 0,
@@ -580,7 +580,18 @@
     { "ts": "2026-05-15T15:59:00Z", "event": "autonomous_fix", "issue": "F-001 — action_name in odoo_call_action accepted unrestricted strings, allowing arbitrary ORM method dispatch via execute_kw (analogous to US-5 AC-9 threat).", "fix": "Added METHOD_RE=/^[a-z_][a-z0-9_]*$/ check at top of action handler with early-return InputValidationError. Mirrors execute.ts pattern. Gates re-run: biome ✓, tsc 2 (baseline), vitest 213/213 (no regressions; existing action tests use snake_case names that satisfy the regex)." },
     { "ts": "2026-05-15T15:59:30Z", "event": "security_deferred", "wave": 4, "deferred": ["F-002 (model regex on other tools)", "F-003 (sanitizeArgs for odoo_execute)", "F-004 (logger on validation failure)", "F-005 (non-OdooError logging)", "F-006 (domain structural validation)"], "reason": "F-002: spec US-5 AC-9 explicitly scoped to execute tool, other tools have hardcoded methods so model is less attacker-relevant. F-003/4/5: behavior changes and observability, not security primitives. F-006: accepted by design per US-4 AC-8. All five tracked in evidence/security-review-wave-4.md for v0.1 hardening." },
     { "ts": "2026-05-15T16:00:00Z", "event": "wired_verification_deferred", "wave": 4, "task_ids": ["T-14", "T-15", "T-16", "T-17", "T-18"], "reason": "Spec design intentionally separates 'build tool handler' (wave 4) from 'register tool handler' (T-21 in wave 5). All 5 tasks have Wired=pending; the imports happen in T-21 which owns tools/index.ts. Wired verification deferred to wave 5 close where T-21 will satisfy all 5 imports simultaneously. T-19 is wired=n/a (consumed by T-20 resource publisher)." },
-    { "ts": "2026-05-15T16:00:00Z", "event": "wave_completed", "wave": 4, "task_count": 6, "duration_min": 35, "tasks": ["T-14", "T-15", "T-16", "T-17", "T-18", "T-19"], "sub_batches": 2 }
+    { "ts": "2026-05-15T16:00:00Z", "event": "wave_completed", "wave": 4, "task_count": 6, "duration_min": 35, "tasks": ["T-14", "T-15", "T-16", "T-17", "T-18", "T-19"], "sub_batches": 2 },
+    { "ts": "2026-05-15T16:02:00Z", "event": "wave_started", "wave": 5, "pre_wave_sha": "07be546", "pending_task_count": 2, "task_ids": ["T-20", "T-21"], "parallel_strategy": "2 parallel agents (disjoint files: resources.ts vs tools/index.ts). T-21 is sole writer of the shared file packages/odoo-mcp/src/tools/index.ts by design, so the shared-file gate doesn't apply (no other agent contends for that file)." },
+    { "ts": "2026-05-15T16:08:00Z", "event": "task_completed", "task_id": "T-20", "files": ["packages/odoo-mcp/src/resources.ts", "packages/odoo-mcp/tests/resources.test.ts"], "lines": "resources:45 resources.test:224", "test_result": "12 new tests passing", "design_notes": "Declarative table of 7 {name, uri, data} entries; closure over capturedData. Error fields serialized as-is per US-3 AC-3." },
+    { "ts": "2026-05-15T16:08:00Z", "event": "task_completed", "task_id": "T-21", "files": ["packages/odoo-mcp/src/tools/index.ts"], "lines": "index:22", "test_result": "no tests (trivial aggregator)", "design_notes": "Pure aggregator — imports 5 register* functions and calls them in sequence. No other logic per task spec." },
+    { "ts": "2026-05-15T16:08:30Z", "event": "gate_run", "wave": 5, "gate": "biome", "status": "pass", "evidence": "evidence/tests/wave-5-lint.txt", "note": "No autofix needed" },
+    { "ts": "2026-05-15T16:08:30Z", "event": "gate_run", "wave": 5, "gate": "tsc", "status": "pass", "errors_now": 2, "baseline_errors": 6, "delta": -4, "evidence": "evidence/tests/wave-5-typecheck-mcp.txt", "note": "Only T-22 ./server.js baseline remains." },
+    { "ts": "2026-05-15T16:08:30Z", "event": "gate_run", "wave": 5, "gate": "vitest", "status": "pass", "tests": "225/225 (47 client + 178 mcp; +12 in wave 5)", "evidence": "evidence/tests/wave-5-tests.txt" },
+    { "ts": "2026-05-15T16:09:00Z", "event": "wired_verified", "wave": 5, "task_ids": ["T-14", "T-15", "T-16", "T-17", "T-18"], "from_status": "pending", "to_status": "yes", "evidence": "grep packages/odoo-mcp/src/ confirmed all 5 register* functions imported and called in src/tools/index.ts lines 5-9 (imports) and 17-21 (calls). T-21 wired the 5 wave-4 tasks as designed." },
+    { "ts": "2026-05-15T16:09:00Z", "event": "wired_verification_deferred", "wave": 5, "task_id": "T-21", "reason": "T-21's registerAllTools is exported but has no current importer — by spec design T-22 (wave 6 server factory) will be the call site. Wired remains 'pending' until T-22 lands. T-20 (registerResources) and T-19 (runProbe) similarly are designed for T-22 consumption, but spec marked them n/a — leaving as-is." },
+    { "ts": "2026-05-15T16:09:00Z", "event": "integration_smoke_skipped", "wave": 5, "reason": "integration_cmd still null." },
+    { "ts": "2026-05-15T16:09:00Z", "event": "security_review_skipped", "wave": 5, "reason": "Wave 5 introduced T-21 (trivial 5-import aggregator) and T-20 (resource publisher that just JSON-serializes pre-fetched probe data). No new attacker-facing surface beyond what wave 4 already reviewed. Cumulative findings unchanged." },
+    { "ts": "2026-05-15T16:09:00Z", "event": "wave_completed", "wave": 5, "task_count": 2, "duration_min": 7, "tasks": ["T-20", "T-21"] }
   ],
 
   "security": {
