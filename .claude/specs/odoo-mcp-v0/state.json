@@ -4,7 +4,7 @@
   "created_at": "2026-05-15T14:09:48Z",
   "quick_mode": false,
 
-  "phase": "documented",
+  "phase": "released",
 
   "integrity": {
     "requirements_sha256": "7cc6dfb2951792142f88dc8337bb4dd1673ea79ec9c0af5489481ef39a27718f",
@@ -623,7 +623,9 @@
     { "ts": "2026-05-15T17:30:00Z", "event": "spec_accept_second_pass", "verdict": "ACCEPTED by acceptor with fix_effort=0, confirmed by user", "evidence": "evidence/acceptance.md", "note": "All 4 deferred security findings verified fixed (F-002, F-003, F-004, F-005). Dead code removed. Doc coverage 56%→75%. 253/253 tests, tsc 0/0, biome clean." },
     { "ts": "2026-05-15T17:30:00Z", "event": "phase_advanced", "from": "executed", "to": "accepted", "note": "Spec formally accepted at HEAD 68050a4. Next phases: /spec-docs (user-facing docs), /spec-release (release notes + changelog), /spec-verify (post-deploy smoke)." },
     { "ts": "2026-05-15T17:45:00Z", "event": "docs_generated", "files": ["docs/api-reference.md", "docs/tools.md", "docs/resources.md", "docs/configuration.md", "docs/architecture.md", "docs/troubleshooting.md"], "total_lines": 1656, "note": "6 user-facing docs covering API reference (programmatic client), MCP tool reference, MCP resource reference, env+Claude-Desktop setup, internal architecture for contributors, and troubleshooting playbook." },
-    { "ts": "2026-05-15T17:45:00Z", "event": "phase_advanced", "from": "accepted", "to": "documented", "note": "User-facing docs persisted at .claude/specs/odoo-mcp-v0/docs/. README.md at project root remains the landing page; these are deeper reference material." }
+    { "ts": "2026-05-15T17:45:00Z", "event": "phase_advanced", "from": "accepted", "to": "documented", "note": "User-facing docs persisted at .claude/specs/odoo-mcp-v0/docs/. README.md at project root remains the landing page; these are deeper reference material." },
+    { "ts": "2026-05-15T17:55:00Z", "event": "release_artifacts_generated", "files": ["release.md"], "version": "0.1.0", "git_sha": "815c2426", "security_gate": "pass (0 critical findings)", "note": "release.md contains highlights, full changelog of waves 0-7 + v0.1 hardening, breaking changes (none — initial release), deployment checklist, env var table, rollback plan, reproducibility manifest with spec-file SHA256s, and known limitations. No --tag or --release flags passed; git tag and GitHub release not created in this invocation." },
+    { "ts": "2026-05-15T17:55:00Z", "event": "phase_advanced", "from": "documented", "to": "released", "note": "Release artifacts persisted. To formally tag and publish: re-invoke /spec-release --tag --release, or run pnpm publish manually for the @netlinks scope." }
   ],
 
   "security": {
