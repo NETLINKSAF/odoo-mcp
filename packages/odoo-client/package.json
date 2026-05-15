@@ -1,0 +1,26 @@
+{
+  "name": "@netlinks/odoo-client",
+  "version": "0.1.0",
+  "description": "Standalone TypeScript JSON-RPC client for Odoo 19 — used by @netlinks/odoo-mcp",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7",
+    "vitest": "^3"
+  }
+}

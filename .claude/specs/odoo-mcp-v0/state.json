@@ -36,7 +36,7 @@
   "tasks": {
     "T-1": {
       "title": "Define shared types and error classes",
-      "status": "pending",
+      "status": "completed",
       "wave": 0,
       "wired": null,
       "failures": 0,
@@ -49,7 +49,7 @@
     },
     "T-2": {
       "title": "Workspace root scaffolding",
-      "status": "pending",
+      "status": "completed",
       "wave": 0,
       "wired": null,
       "failures": 0,
@@ -65,7 +65,7 @@
     },
     "T-3": {
       "title": "@netlinks/odoo-client package scaffolding",
-      "status": "pending",
+      "status": "completed",
       "wave": 0,
       "wired": null,
       "failures": 0,
@@ -78,7 +78,7 @@
     },
     "T-4": {
       "title": "@netlinks/odoo-mcp package scaffolding",
-      "status": "pending",
+      "status": "completed",
       "wave": 0,
       "wired": null,
       "failures": 0,
@@ -386,7 +386,7 @@
     "iteration": 0,
     "total_tokens": 0,
     "budget_cap": 1200000,
-    "started_at": null,
+    "started_at": "2026-05-15T14:58:00Z",
     "last_iteration_at": null,
     "human_checkpoint_interval": 5,
     "tasks_since_checkpoint": 0
@@ -395,8 +395,8 @@
   "reproducibility": {
     "plugin_version": "2.0.0",
     "model_versions": {},
-    "git_sha_start": null,
-    "git_note": "Working directory is not a git repository at spec creation. Implementer should `git init` as part of T-2 (workspace scaffolding).",
+    "git_sha_start": "2a0d8efac3e2bde87c24d55d5050a0a2729d6571",
+    "git_note": "Repo initialized by /spec-loop pre-flight at 2026-05-15T14:58:00Z; baseline commit contains only .claude/specs/odoo-mcp-v0/* artifacts.",
     "prompt_hashes": [],
     "referenced_codebase_files": [
       "pnpm-workspace.yaml",
@@ -496,7 +496,9 @@
     { "ts": "2026-05-15T14:57:54Z", "event": "validation_ran", "status": "fail", "errors": 7, "warnings": 1, "note": "Wave-DAG violations across waves 1, 2, 3; Wire-into mismatches in T-14..T-18 and T-21; uncovered test file for odoo-client errors." },
     { "ts": "2026-05-15T14:57:54Z", "event": "validation_auto_fix", "errors_resolved": 7, "files_modified": ["tasks.md", "state.json"], "tasks_rewaved": 18 },
     { "ts": "2026-05-15T14:57:54Z", "event": "validation_pass", "status": "pass", "report_hash": "17f1c190cae213e3ef31db0695e1312f4b0553beac048f20f7ab54653adbcabc" },
-    { "ts": "2026-05-15T14:57:54Z", "event": "phase_advanced", "from": "spec", "to": "validated" }
+    { "ts": "2026-05-15T14:57:54Z", "event": "phase_advanced", "from": "spec", "to": "validated" },
+    { "ts": "2026-05-15T14:58:00Z", "event": "loop_started", "git_sha_start": "2a0d8efac3e2bde87c24d55d5050a0a2729d6571", "budget_cap": 1200000 },
+    { "ts": "2026-05-15T14:58:00Z", "event": "wave_started", "wave": 0, "pending_task_count": 4, "task_ids": ["T-1", "T-2", "T-3", "T-4"], "parallel_strategy": "no-worktree (disjoint files by construction)", "details": "Wave 0 dispatched: 4 parallel spec-implementer agents (T-1 types/errors, T-2 workspace root, T-3 odoo-client scaffold, T-4 odoo-mcp scaffold)" }
   ],
 
   "security": {
