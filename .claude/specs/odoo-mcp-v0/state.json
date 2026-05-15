@@ -1,0 +1,517 @@
+{
+  "version": 1,
+  "spec_name": "odoo-mcp-v0",
+  "created_at": "2026-05-15T14:09:48Z",
+  "quick_mode": false,
+
+  "phase": "validated",
+
+  "integrity": {
+    "requirements_sha256": "7cc6dfb2951792142f88dc8337bb4dd1673ea79ec9c0af5489481ef39a27718f",
+    "design_sha256": "5d6549679d9039eafc4d871d50aadff9deaef892a5ab4af94ce1a2a4c0c4aee6",
+    "tasks_sha256": "579a0bc5d73472f28ce29211cadb2acbc3bba78ff6391ab3a880639b208ac1e3",
+    "computed_at": "2026-05-15T14:57:54Z"
+  },
+
+  "validation": {
+    "last_pass": "2026-05-15T14:57:54Z",
+    "status": "pass",
+    "report_hash": "17f1c190cae213e3ef31db0695e1312f4b0553beac048f20f7ab54653adbcabc",
+    "errors_found": 7,
+    "errors_auto_fixed": 7,
+    "errors_remaining": 0,
+    "warnings_found": 1,
+    "acknowledged_warnings": [
+      "WARN-1: T-8 (PII sanitizer) has no test file and no Vitest acceptance criterion — quality gap; the three ACs are testable but no task creates packages/odoo-client/tests/sanitize.test.ts. Acknowledged: tolerable for v0, address in hardening pass."
+    ],
+    "fixes_summary": [
+      "Re-waved 18 tasks to eliminate intra-wave dependencies (waves expanded from 5 to 8): T-6 w1->w2, T-7 w1->w3, T-9..T-13 w2->w3, T-14..T-19 w2->w4, T-20 w2->w5, T-21 w3->w5, T-22 w3->w6, T-23/T-24 w4->w7",
+      "T-14..T-18 Wire into -> n/a; T-21 now owns all 5 register-function imports into tools/index.ts",
+      "T-21 Wire into -> n/a; T-22 now owns the registerAllTools call into server.ts",
+      "T-1 Files += packages/odoo-client/tests/errors.test.ts; added AC-4 verifying 7 OdooError subclasses",
+      "tasks.md intro and wave summary rewritten for the 8-wave structure"
+    ]
+  },
+
+  "tasks": {
+    "T-1": {
+      "title": "Define shared types and error classes",
+      "status": "pending",
+      "wave": 0,
+      "wired": null,
+      "failures": 0,
+      "depends_on": [],
+      "files": [
+        "packages/odoo-client/src/types.ts",
+        "packages/odoo-client/src/errors.ts",
+        "packages/odoo-client/tests/errors.test.ts"
+      ]
+    },
+    "T-2": {
+      "title": "Workspace root scaffolding",
+      "status": "pending",
+      "wave": 0,
+      "wired": null,
+      "failures": 0,
+      "depends_on": [],
+      "files": [
+        "pnpm-workspace.yaml",
+        "package.json",
+        "tsconfig.base.json",
+        "biome.json",
+        "LICENSE",
+        ".gitignore"
+      ]
+    },
+    "T-3": {
+      "title": "@netlinks/odoo-client package scaffolding",
+      "status": "pending",
+      "wave": 0,
+      "wired": null,
+      "failures": 0,
+      "depends_on": [],
+      "files": [
+        "packages/odoo-client/package.json",
+        "packages/odoo-client/tsconfig.json",
+        "packages/odoo-client/src/index.ts"
+      ]
+    },
+    "T-4": {
+      "title": "@netlinks/odoo-mcp package scaffolding",
+      "status": "pending",
+      "wave": 0,
+      "wired": null,
+      "failures": 0,
+      "depends_on": [],
+      "files": [
+        "packages/odoo-mcp/package.json",
+        "packages/odoo-mcp/tsconfig.json",
+        "packages/odoo-mcp/src/index.ts"
+      ]
+    },
+    "T-5": {
+      "title": "JSON-RPC transport",
+      "status": "pending",
+      "wave": 1,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1"],
+      "files": [
+        "packages/odoo-client/src/rpc.ts",
+        "packages/odoo-client/tests/rpc.test.ts"
+      ]
+    },
+    "T-6": {
+      "title": "Auth strategy abstraction",
+      "status": "pending",
+      "wave": 2,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-5"],
+      "files": [
+        "packages/odoo-client/src/auth.ts",
+        "packages/odoo-client/tests/auth.test.ts"
+      ]
+    },
+    "T-7": {
+      "title": "OdooClient class",
+      "status": "pending",
+      "wave": 3,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-5", "T-6"],
+      "files": [
+        "packages/odoo-client/src/client.ts",
+        "packages/odoo-client/tests/client.test.ts"
+      ]
+    },
+    "T-8": {
+      "title": "PII sanitizer",
+      "status": "pending",
+      "wave": 1,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1"],
+      "files": [
+        "packages/odoo-client/src/sanitize.ts"
+      ]
+    },
+    "T-9": {
+      "title": "Config loader",
+      "status": "pending",
+      "wave": 3,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-4"],
+      "files": [
+        "packages/odoo-mcp/src/config.ts",
+        "packages/odoo-mcp/tests/config.test.ts"
+      ]
+    },
+    "T-10": {
+      "title": "Structured logger",
+      "status": "pending",
+      "wave": 3,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-4"],
+      "files": [
+        "packages/odoo-mcp/src/logger.ts"
+      ]
+    },
+    "T-11": {
+      "title": "MCP error formatter",
+      "status": "pending",
+      "wave": 3,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-4"],
+      "files": [
+        "packages/odoo-mcp/src/errors.ts",
+        "packages/odoo-mcp/tests/errors.test.ts"
+      ]
+    },
+    "T-12": {
+      "title": "Multi-company context builder",
+      "status": "pending",
+      "wave": 3,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-4"],
+      "files": [
+        "packages/odoo-mcp/src/context.ts",
+        "packages/odoo-mcp/tests/context.test.ts"
+      ]
+    },
+    "T-13": {
+      "title": "Zod tool input schemas",
+      "status": "pending",
+      "wave": 3,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-4"],
+      "files": [
+        "packages/odoo-mcp/src/tools/schemas.ts"
+      ]
+    },
+    "T-14": {
+      "title": "ORM tool handlers",
+      "status": "pending",
+      "wave": 4,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-4", "T-7", "T-8", "T-11", "T-12", "T-13"],
+      "files": [
+        "packages/odoo-mcp/src/tools/orm.ts",
+        "packages/odoo-mcp/tests/tools/orm.test.ts"
+      ]
+    },
+    "T-15": {
+      "title": "Execute tool handler",
+      "status": "pending",
+      "wave": 4,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
+      "files": [
+        "packages/odoo-mcp/src/tools/execute.ts",
+        "packages/odoo-mcp/tests/tools/execute.test.ts"
+      ]
+    },
+    "T-16": {
+      "title": "Report tool handler",
+      "status": "pending",
+      "wave": 4,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
+      "files": [
+        "packages/odoo-mcp/src/tools/report.ts",
+        "packages/odoo-mcp/tests/tools/report.test.ts"
+      ]
+    },
+    "T-17": {
+      "title": "Action tool handler",
+      "status": "pending",
+      "wave": 4,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
+      "files": [
+        "packages/odoo-mcp/src/tools/action.ts",
+        "packages/odoo-mcp/tests/tools/action.test.ts"
+      ]
+    },
+    "T-18": {
+      "title": "Fields-get tool handler",
+      "status": "pending",
+      "wave": 4,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-4", "T-11", "T-12", "T-13"],
+      "files": [
+        "packages/odoo-mcp/src/tools/introspect.ts",
+        "packages/odoo-mcp/tests/tools/introspect.test.ts"
+      ]
+    },
+    "T-19": {
+      "title": "Capability probe",
+      "status": "pending",
+      "wave": 4,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-4", "T-7"],
+      "files": [
+        "packages/odoo-mcp/src/probe.ts",
+        "packages/odoo-mcp/tests/probe.test.ts"
+      ]
+    },
+    "T-20": {
+      "title": "MCP resource publisher",
+      "status": "pending",
+      "wave": 5,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-1", "T-4", "T-19"],
+      "files": [
+        "packages/odoo-mcp/src/resources.ts"
+      ]
+    },
+    "T-21": {
+      "title": "Tool registration orchestrator",
+      "status": "pending",
+      "wave": 5,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-14", "T-15", "T-16", "T-17", "T-18"],
+      "files": [
+        "packages/odoo-mcp/src/tools/index.ts"
+      ]
+    },
+    "T-22": {
+      "title": "MCP server factory and CLI entry point",
+      "status": "pending",
+      "wave": 6,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-9", "T-10", "T-19", "T-20", "T-21"],
+      "files": [
+        "packages/odoo-mcp/src/server.ts",
+        "packages/odoo-mcp/src/bin.ts",
+        "packages/odoo-mcp/tests/server.test.ts"
+      ]
+    },
+    "T-23": {
+      "title": "Smoke test script",
+      "status": "pending",
+      "wave": 7,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-22"],
+      "files": [
+        "scripts/smoke-test.mjs"
+      ]
+    },
+    "T-24": {
+      "title": "README, Claude Desktop config example, and Docker Compose",
+      "status": "pending",
+      "wave": 7,
+      "wired": null,
+      "failures": 0,
+      "depends_on": ["T-22"],
+      "files": [
+        "README.md",
+        "examples/claude-desktop-config.json",
+        "docker-compose.yml"
+      ]
+    }
+  },
+
+  "waves": [
+    {
+      "wave": 0,
+      "task_ids": ["T-1", "T-2", "T-3", "T-4"]
+    },
+    {
+      "wave": 1,
+      "task_ids": ["T-5", "T-8"]
+    },
+    {
+      "wave": 2,
+      "task_ids": ["T-6"]
+    },
+    {
+      "wave": 3,
+      "task_ids": ["T-7", "T-9", "T-10", "T-11", "T-12", "T-13"]
+    },
+    {
+      "wave": 4,
+      "task_ids": ["T-14", "T-15", "T-16", "T-17", "T-18", "T-19"]
+    },
+    {
+      "wave": 5,
+      "task_ids": ["T-20", "T-21"]
+    },
+    {
+      "wave": 6,
+      "task_ids": ["T-22"]
+    },
+    {
+      "wave": 7,
+      "task_ids": ["T-23", "T-24"]
+    }
+  ],
+
+  "parallel": {
+    "max_parallel_agents": 3,
+    "shared_files": [
+      "pnpm-lock.yaml",
+      "packages/odoo-client/src/index.ts",
+      "packages/odoo-mcp/src/index.ts",
+      "packages/odoo-mcp/src/tools/index.ts"
+    ],
+    "generated_files": [
+      "packages/odoo-client/dist",
+      "packages/odoo-mcp/dist"
+    ],
+    "post_merge_commands": [
+      "pnpm install",
+      "pnpm -r build"
+    ]
+  },
+
+  "execution": {
+    "current_wave": 0,
+    "current_batch": [],
+    "iteration": 0,
+    "total_tokens": 0,
+    "budget_cap": 1200000,
+    "started_at": null,
+    "last_iteration_at": null,
+    "human_checkpoint_interval": 5,
+    "tasks_since_checkpoint": 0
+  },
+
+  "reproducibility": {
+    "plugin_version": "2.0.0",
+    "model_versions": {},
+    "git_sha_start": null,
+    "git_note": "Working directory is not a git repository at spec creation. Implementer should `git init` as part of T-2 (workspace scaffolding).",
+    "prompt_hashes": [],
+    "referenced_codebase_files": [
+      "pnpm-workspace.yaml",
+      "package.json",
+      "tsconfig.base.json",
+      "biome.json",
+      "LICENSE",
+      ".gitignore",
+      "README.md",
+      "docker-compose.yml",
+      "scripts/smoke-test.mjs",
+      "examples/claude-desktop-config.json",
+      "packages/odoo-client/package.json",
+      "packages/odoo-client/tsconfig.json",
+      "packages/odoo-client/src/index.ts",
+      "packages/odoo-client/src/types.ts",
+      "packages/odoo-client/src/errors.ts",
+      "packages/odoo-client/src/rpc.ts",
+      "packages/odoo-client/src/auth.ts",
+      "packages/odoo-client/src/client.ts",
+      "packages/odoo-client/src/sanitize.ts",
+      "packages/odoo-client/tests/rpc.test.ts",
+      "packages/odoo-client/tests/auth.test.ts",
+      "packages/odoo-client/tests/client.test.ts",
+      "packages/odoo-client/tests/errors.test.ts",
+      "packages/odoo-mcp/package.json",
+      "packages/odoo-mcp/tsconfig.json",
+      "packages/odoo-mcp/src/index.ts",
+      "packages/odoo-mcp/src/bin.ts",
+      "packages/odoo-mcp/src/server.ts",
+      "packages/odoo-mcp/src/config.ts",
+      "packages/odoo-mcp/src/probe.ts",
+      "packages/odoo-mcp/src/resources.ts",
+      "packages/odoo-mcp/src/context.ts",
+      "packages/odoo-mcp/src/logger.ts",
+      "packages/odoo-mcp/src/errors.ts",
+      "packages/odoo-mcp/src/tools/index.ts",
+      "packages/odoo-mcp/src/tools/schemas.ts",
+      "packages/odoo-mcp/src/tools/orm.ts",
+      "packages/odoo-mcp/src/tools/execute.ts",
+      "packages/odoo-mcp/src/tools/report.ts",
+      "packages/odoo-mcp/src/tools/action.ts",
+      "packages/odoo-mcp/src/tools/introspect.ts",
+      "packages/odoo-mcp/tests/server.test.ts",
+      "packages/odoo-mcp/tests/config.test.ts",
+      "packages/odoo-mcp/tests/probe.test.ts",
+      "packages/odoo-mcp/tests/context.test.ts",
+      "packages/odoo-mcp/tests/errors.test.ts",
+      "packages/odoo-mcp/tests/tools/orm.test.ts",
+      "packages/odoo-mcp/tests/tools/execute.test.ts",
+      "packages/odoo-mcp/tests/tools/report.test.ts",
+      "packages/odoo-mcp/tests/tools/action.test.ts",
+      "packages/odoo-mcp/tests/tools/introspect.test.ts"
+    ]
+  },
+
+  "quality_gates": {
+    "gates": [
+      { "name": "lint", "cmd": "pnpm biome check ." },
+      { "name": "typecheck", "cmd": "pnpm -r exec tsc --noEmit" },
+      { "name": "test", "cmd": "pnpm -r test" }
+    ],
+    "lint_cmd": "pnpm biome check .",
+    "typecheck_cmd": "pnpm -r exec tsc --noEmit",
+    "test_cmd": "pnpm -r test",
+    "dev_cmd": null,
+    "integration_cmd": null,
+    "baseline_errors": null,
+    "allowed_commands": ["pnpm", "npx", "node", "git", "vitest", "tsc", "biome"],
+    "last_regression_pass": null,
+    "note": "Gates configured from design.md tech stack (pnpm workspace + Biome + Vitest + tsc strict). Gates will fail until T-2 (workspace scaffolding) completes — this is expected and not a baseline error."
+  },
+
+  "lessons_applied": [],
+
+  "audit_log": [
+    { "ts": "2026-05-15T14:09:48Z", "event": "spec_initialized", "note": "Greenfield project; preset skipped (no MCP-server preset exists, none of REST API/React Page/CLI Tool fits). Requirements basis = brainstorm brief from prior conversation." },
+    {
+      "ts": "2026-05-15T00:00:00Z",
+      "event": "threat_model_complete",
+      "threats_by_stride": {
+        "S": 3,
+        "T": 5,
+        "R": 1,
+        "I": 7,
+        "D": 5,
+        "E": 2
+      },
+      "injected_criteria": 10
+    },
+    { "ts": "2026-05-15T14:25:00Z", "event": "human_gate_passed", "design_approved": true, "threat_model_criteria_accepted": 10, "threat_model_criteria_rejected": 0 },
+    { "ts": "2026-05-15T14:40:00Z", "event": "tasks_generated", "task_count": 24, "waves": 5 },
+    { "ts": "2026-05-15T14:43:38Z", "event": "integrity_computed", "note": "SHA256 hashes recorded for requirements.md, design.md, tasks.md." },
+    { "ts": "2026-05-15T14:43:38Z", "event": "budget_auto_calculated", "budget_cap": 1200000, "formula": "24 tasks x 50000 tokens/task" },
+    { "ts": "2026-05-15T14:43:38Z", "event": "quality_gates_configured", "stack": "pnpm + Biome + Vitest + tsc strict", "gates": ["lint", "typecheck", "test"] },
+    { "ts": "2026-05-15T14:43:38Z", "event": "spec_phase_complete", "phase": "spec" },
+    { "ts": "2026-05-15T14:57:54Z", "event": "validation_ran", "status": "fail", "errors": 7, "warnings": 1, "note": "Wave-DAG violations across waves 1, 2, 3; Wire-into mismatches in T-14..T-18 and T-21; uncovered test file for odoo-client errors." },
+    { "ts": "2026-05-15T14:57:54Z", "event": "validation_auto_fix", "errors_resolved": 7, "files_modified": ["tasks.md", "state.json"], "tasks_rewaved": 18 },
+    { "ts": "2026-05-15T14:57:54Z", "event": "validation_pass", "status": "pass", "report_hash": "17f1c190cae213e3ef31db0695e1312f4b0553beac048f20f7ab54653adbcabc" },
+    { "ts": "2026-05-15T14:57:54Z", "event": "phase_advanced", "from": "spec", "to": "validated" }
+  ],
+
+  "security": {
+    "posture_score": null,
+    "last_audit_date": null,
+    "threat_model_status": "completed",
+    "findings": {
+      "critical": 0,
+      "high": 4,
+      "medium": 6
+    }
+  },
+
+  "acceptance": {
+    "status": null,
+    "estimated_fix_rounds": null
+  }
+}
