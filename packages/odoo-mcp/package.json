@@ -1,6 +1,6 @@
 {
   "name": "@netlinksinc/odoo-mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "MCP server exposing any Odoo 19 instance to Claude (Desktop, Code, Cowork) \u2014 generic-only tool surface, works on stock and customized Odoo",
   "keywords": [
     "mcp",

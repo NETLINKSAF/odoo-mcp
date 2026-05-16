@@ -2,20 +2,23 @@
 
 Odoo 19 MCP server. Lets Claude run agentic workflows on any Odoo instance.
 
-**v0.1.1** — MIT — Published as `@netlinksinc/odoo-mcp` on npm. Maintained by NETLINKS Inc.
+**v0.2.0** — MIT — Published as `@netlinksinc/odoo-mcp` on npm. Maintained by NETLINKS Inc.
 
 ## Client compatibility
 
-| Client | v0.1.x (now) | v0.2 (next) |
+| Client | Transport | Status |
 |---|---|---|
-| **Claude Code** (CLI) | ✓ supported | ✓ supported |
-| **Claude Desktop** (newer "Add custom connector" UI) | not supported | ✓ via HTTP transport |
-| **Claude Desktop** (older builds with `claude_desktop_config.json`) | may work (legacy stdio) | ✓ via HTTP transport |
-| **Claude Cowork** | not supported | ✓ via HTTP transport |
+| **Claude Code** (CLI) | stdio | Supported (v0.1+) |
+| **Claude Desktop** ("Add custom connector" UI) | Streamable HTTP | Supported (v0.2+) |
+| **Claude Cowork** | Streamable HTTP | Supported (v0.2+) |
 
-v0.1.x is a **local stdio** MCP server — it runs as a subprocess of whatever spawned it. Today only Claude Code reliably supports that. v0.2 adds a streaming HTTP transport mode so the same binary can be deployed (Fly.io / Render / your VPS) and reached from any remote-MCP client including Claude Desktop's newer connector UI and Claude Cowork.
+The same `@netlinksinc/odoo-mcp` binary runs in two modes. `MODE=stdio` (default) is for Claude Code — it spawns the binary as a subprocess. `MODE=http` is for Claude Desktop's newer connector UI and Cowork — you deploy the binary yourself (Fly.io / Render / your VPS) and point your remote-MCP client at the URL.
 
-If you're on Claude Desktop or Cowork today and don't want to wait, [open an issue](https://github.com/NETLINKSAF/odoo-mcp/issues) — happy to help bridge.
+## Self-host for Claude Desktop / Cowork
+
+See **[docs/v0.2-deploy.md](docs/v0.2-deploy.md)** for the full deployment guide: Fly.io is the canonical target (~5 minutes), with secondary instructions for Render, Railway, and generic Linux VPS. Single-tenant — one deployment serves one Odoo instance with one bearer token.
+
+The connector is intentionally self-hosted. NETLINKS does not run a hosted multi-user service. You hold your own Odoo credentials at deploy time; nothing is sent through any third-party connector service.
 
 ---
 
@@ -138,9 +141,9 @@ Structured JSON log lines go to stderr unconditionally. Set `ODOO_MCP_LOG_FILE` 
 
 ## Roadmap
 
-**v0.2** — adds a streaming HTTP transport mode (env var `MODE=http`), bearer-token auth, and a Fly.io deploy guide. Unlocks Claude Desktop's newer connector UI and Claude Cowork. Same npm package, same 10 tools, same 7 resources.
+**v0.2 (shipped)** — Streaming HTTP transport mode (env var `MODE=http`), bearer-token auth, `/health` endpoint, Fly.io deploy guide, real-Odoo integration tests. Unlocks Claude Desktop's newer connector UI and Claude Cowork. Same npm package, same 10 tools, same 7 resources.
 
-**v0.3** — multi-tenant OAuth 2.1 IdP. Hosted as a free service so any Cowork user can connect their own Odoo without self-deploying. Eligibility for Anthropic's connector directory.
+**Future (not committed)** — Possible additions based on user signal: support for Odoo 17/18 quirks, broader Odoo version coverage, additional self-host deploy recipes. A hosted-by-NETLINKS service is explicitly **not** on the roadmap — the connector is and will remain self-hosted single-tenant.
 
 ---
 
