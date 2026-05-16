@@ -161,6 +161,44 @@ function verifyBearer(authHeader: string | undefined, expected: string): boolean
   return a.length === b.length && timingSafeEqual(bufA, bufB);
 }
 
+// ---------------------------------------------------------------------------
+// Auth-failure rate limiting (US-2 AC-10, HIGH severity per threat model)
+// ---------------------------------------------------------------------------
+// Sliding 60-second window per source IP. After 20 failed auth attempts, the
+// server returns HTTP 429 for that IP until the oldest failure ages out.
+//
+// Scope is intentionally narrow: this protects against bearer-token
+// brute-forcing, not general request rate. Successful auths do NOT increment.
+//
+// Storage is in-memory and per-process. For a single-tenant deploy this is
+// the right granularity — there is one process, one token, one set of
+// attackers. Old entries are pruned lazily on each access.
+
+const AUTH_FAIL_WINDOW_MS = 60_000;
+const AUTH_FAIL_LIMIT = 20;
+const authFailures = new Map<string, number[]>();
+
+/** Returns true if the IP has exceeded the auth-failure rate limit. */
+function isAuthRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entries = authFailures.get(ip);
+  if (!entries) return false;
+  // Prune timestamps older than the window
+  const fresh = entries.filter((ts) => now - ts < AUTH_FAIL_WINDOW_MS);
+  if (fresh.length !== entries.length) authFailures.set(ip, fresh);
+  return fresh.length >= AUTH_FAIL_LIMIT;
+}
+
+/** Record an auth failure for this IP. */
+function recordAuthFailure(ip: string): void {
+  const now = Date.now();
+  const entries = authFailures.get(ip) ?? [];
+  entries.push(now);
+  // Prune in-place to bound memory
+  const fresh = entries.filter((ts) => now - ts < AUTH_FAIL_WINDOW_MS);
+  authFailures.set(ip, fresh);
+}
+
 /** Write a JSON response with the given status code and object body. */
 function jsonResponse(res: NodeServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -390,17 +428,36 @@ export async function startHttpTransport(
         }
 
         // ----------------------------------------------------------------
+        // Auth-failure rate limit (US-2 AC-10) — checked BEFORE auth so a
+        // banned IP doesn't get to verify a new token attempt.
+        // ----------------------------------------------------------------
+        const clientIpForRate = extractClientIp(req);
+        if (isAuthRateLimited(clientIpForRate)) {
+          logRequest(
+            method,
+            path,
+            429,
+            startedAt,
+            clientIpForRate,
+            String(req.headers['user-agent'] ?? ''),
+          );
+          jsonResponse(res, 429, { error: 'rate_limited' });
+          return;
+        }
+
+        // ----------------------------------------------------------------
         // Bearer auth for all non-health routes (US-2 AC-9)
         // ----------------------------------------------------------------
         const authHeader = req.headers.authorization;
         const authStr = Array.isArray(authHeader) ? authHeader[0] : authHeader;
         if (!verifyBearer(authStr, config.bearerToken)) {
+          recordAuthFailure(clientIpForRate);
           logRequest(
             method,
             path,
             401,
             startedAt,
-            extractClientIp(req),
+            clientIpForRate,
             String(req.headers['user-agent'] ?? ''),
           );
           jsonResponse(res, 401, { error: 'unauthorized' });
