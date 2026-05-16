@@ -1,2 +1,11 @@
 packages:
   - 'packages/*'
+
+# pnpm 11.x build-script allow list. Biome and esbuild ship platform-specific
+# binaries via lifecycle scripts; without explicit approval pnpm aborts every
+# install with ERR_PNPM_IGNORED_BUILDS. Approving these two is the same trust
+# decision npm makes by default — they are first-party tools from the
+# Biome and Vercel teams.
+allowBuilds:
+  '@biomejs/biome': true
+  esbuild: true
