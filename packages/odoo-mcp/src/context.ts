@@ -1,5 +1,5 @@
-import type { CompanyContext, Context, OdooSession } from '@netlinks/odoo-client';
-import { OdooError } from '@netlinks/odoo-client';
+import type { CompanyContext, Context, OdooSession } from '@netlinksinc/odoo-client';
+import { OdooError } from '@netlinksinc/odoo-client';
 
 /**
  * Build an Odoo RPC context from a session, company args, and optional caller-supplied extras.

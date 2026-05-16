@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { OdooSession } from '@netlinks/odoo-client';
-import { OdooError, OdooUserError, OdooAccessError } from '@netlinks/odoo-client';
-import type { OdooClient } from '@netlinks/odoo-client';
+import type { OdooSession } from '@netlinksinc/odoo-client';
+import { OdooError, OdooUserError, OdooAccessError } from '@netlinksinc/odoo-client';
+import type { OdooClient } from '@netlinksinc/odoo-client';
 import type { Logger } from '../../src/logger.js';
 import { registerActionTool } from '../../src/tools/action.js';
 

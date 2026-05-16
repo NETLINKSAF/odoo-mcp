@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { OdooClient } from '@netlinks/odoo-client';
-import { OdooMissingError } from '@netlinks/odoo-client';
+import type { OdooClient } from '@netlinksinc/odoo-client';
+import { OdooMissingError } from '@netlinksinc/odoo-client';
 import { runProbe } from '../src/probe.js';
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ProbeResult } from '@netlinks/odoo-client';
+import type { ProbeResult } from '@netlinksinc/odoo-client';
 import { registerResources } from '../src/resources.js';
 
 // ---------------------------------------------------------------------------

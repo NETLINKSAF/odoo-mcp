@@ -1,4 +1,4 @@
-# Architecture — @netlinks/odoo-mcp
+# Architecture — @netlinksinc/odoo-mcp
 
 Internal design for contributors. Covers package split, data flow, probe design, and key invariants.
 
@@ -6,8 +6,8 @@ Internal design for contributors. Covers package split, data flow, probe design,
 
 ```
 packages/
-  odoo-client/   -- @netlinks/odoo-client
-  odoo-mcp/      -- @netlinks/odoo-mcp
+  odoo-client/   -- @netlinksinc/odoo-client
+  odoo-mcp/      -- @netlinksinc/odoo-mcp
 ```
 
 `odoo-client` is a standalone JSON-RPC client with zero MCP dependency. It can be imported directly by any Node.js application that needs to talk to Odoo 19. `odoo-mcp` imports `odoo-client` and wraps it in an MCP stdio server.
@@ -25,7 +25,7 @@ bin.ts
   -> server.ts          (wires subsystems)
        -> logger.ts     (createLogger)
        -> probe.ts      (runProbe)
-       |    -> @netlinks/odoo-client (OdooClient methods)
+       |    -> @netlinksinc/odoo-client (OdooClient methods)
        -> resources.ts  (registerResources -- closes over probe snapshot)
        -> tools/index.ts
             -> tools/orm.ts         (6 ORM tools)
@@ -37,7 +37,7 @@ bin.ts
             -> context.ts           (buildContext, validateCompanySubset)
             -> errors.ts            (formatMcpError)
 
-@netlinks/odoo-client index.ts
+@netlinksinc/odoo-client index.ts
   -> types.ts    (Domain, Context, OdooRecord, OdooConfig, OdooSession, ...)
   -> errors.ts   (OdooError hierarchy)
   -> rpc.ts      (jsonRpc, REQUEST_TIMEOUT_MS, JsonRpcRequest, JsonRpcResponse)

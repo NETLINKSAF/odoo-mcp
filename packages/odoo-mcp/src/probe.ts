@@ -1,5 +1,5 @@
-import { OdooMissingError } from '@netlinks/odoo-client';
-import type { OdooClient, ProbeResult } from '@netlinks/odoo-client';
+import { OdooMissingError } from '@netlinksinc/odoo-client';
+import type { OdooClient, ProbeResult } from '@netlinksinc/odoo-client';
 
 // Minimal ambient declaration — avoids @types/node dependency.
 declare const process: { stderr: { write: (data: string) => boolean } };

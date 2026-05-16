@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { OdooSession } from '@netlinks/odoo-client';
-import { OdooError } from '@netlinks/odoo-client';
+import type { OdooSession } from '@netlinksinc/odoo-client';
+import { OdooError } from '@netlinksinc/odoo-client';
 import { buildContext, validateCompanySubset } from '../src/context.js';
 
 // ---------------------------------------------------------------------------

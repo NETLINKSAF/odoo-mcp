@@ -1,4 +1,4 @@
-// Manual MCP smoke test for @netlinks/odoo-mcp.
+// Manual MCP smoke test for @netlinksinc/odoo-mcp.
 //
 // Spawns the compiled server (`packages/odoo-mcp/dist/bin.js`), speaks
 // the MCP stdio JSON-RPC protocol, and asserts that the server reports

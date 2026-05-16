@@ -6,7 +6,7 @@ import {
   OdooAccessError,
   OdooMissingError,
   OdooConnectionError,
-} from '@netlinks/odoo-client';
+} from '@netlinksinc/odoo-client';
 import { formatMcpError } from '../src/errors.js';
 
 afterEach(() => {

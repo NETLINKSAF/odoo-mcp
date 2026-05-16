@@ -1,4 +1,4 @@
-# Configuration — @netlinks/odoo-mcp
+# Configuration — @netlinksinc/odoo-mcp
 
 Environment variables, Claude Desktop wiring, and security notes.
 
@@ -47,7 +47,7 @@ Add the following to `~/Library/Application Support/Claude/claude_desktop_config
   "mcpServers": {
     "odoo": {
       "command": "npx",
-      "args": ["@netlinks/odoo-mcp"],
+      "args": ["@netlinksinc/odoo-mcp"],
       "env": {
         "ODOO_URL": "https://your.odoo.example.com",
         "ODOO_DB": "your_database",
@@ -62,7 +62,7 @@ Add the following to `~/Library/Application Support/Claude/claude_desktop_config
 The `npx` invocation downloads and runs the latest published version. Pin to a specific version for production:
 
 ```json
-"args": ["@netlinks/odoo-mcp@0.1.0"]
+"args": ["@netlinksinc/odoo-mcp@0.1.0"]
 ```
 
 Restart Claude Desktop after editing the config file.

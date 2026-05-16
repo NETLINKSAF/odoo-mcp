@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ProbeResult } from '@netlinks/odoo-client';
+import type { ProbeResult } from '@netlinksinc/odoo-client';
 
 /**
  * Registers 7 MCP resources on the given server, each backed by a closure

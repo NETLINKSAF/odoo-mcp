@@ -1,4 +1,4 @@
-# Future integration-test harness for @netlinks/odoo-mcp.
+# Future integration-test harness for @netlinksinc/odoo-mcp.
 # Brings up Odoo 19 CE + Postgres 16. NOT wired to CI in v0 -- manual use only.
 #
 # Usage:

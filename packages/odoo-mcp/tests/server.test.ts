@@ -5,7 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 // Module mocks — must be hoisted above the import of createOdooMcpServer
 // ---------------------------------------------------------------------------
 
-vi.mock('@netlinks/odoo-client', () => {
+vi.mock('@netlinksinc/odoo-client', () => {
   class OdooAuthError extends Error {
     constructor(message: string) {
       super(message);
@@ -54,12 +54,12 @@ vi.mock('../src/logger.js', () => ({
 // ---------------------------------------------------------------------------
 
 import { createOdooMcpServer } from '../src/server.js';
-import { OdooClient, OdooAuthError } from '@netlinks/odoo-client';
+import { OdooClient, OdooAuthError } from '@netlinksinc/odoo-client';
 import { runProbe } from '../src/probe.js';
 import { registerResources } from '../src/resources.js';
 import { registerAllTools } from '../src/tools/index.js';
 import { createLogger } from '../src/logger.js';
-import type { OdooConfig } from '@netlinks/odoo-client';
+import type { OdooConfig } from '@netlinksinc/odoo-client';
 
 // ---------------------------------------------------------------------------
 // Shared config

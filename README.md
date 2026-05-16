@@ -2,7 +2,7 @@
 
 Odoo 19 MCP server. Lets Claude run agentic workflows on any Odoo instance.
 
-**v0.1.0** — MIT — Published as `@netlinks/odoo-mcp` on npm (planned). Maintained by NETLINKS.
+**v0.1.0** — MIT — Published as `@netlinksinc/odoo-mcp` on npm (planned). Maintained by NETLINKS.
 
 ---
 
@@ -13,7 +13,7 @@ ODOO_URL=https://your.odoo.example.com \
 ODOO_DB=your_db \
 ODOO_USERNAME=mcp_user \
 ODOO_API_KEY=your_api_key \
-npx @netlinks/odoo-mcp
+npx @netlinksinc/odoo-mcp
 ```
 
 ---
@@ -59,7 +59,7 @@ Open the config file and add an `odoo` entry under `mcpServers`. If you already 
   "mcpServers": {
     "odoo": {
       "command": "npx",
-      "args": ["-y", "@netlinks/odoo-mcp"],
+      "args": ["-y", "@netlinksinc/odoo-mcp"],
       "env": {
         "ODOO_URL": "https://your.odoo.example.com",
         "ODOO_DB": "your_database",
@@ -92,7 +92,7 @@ Claude will call `odoo_search_read` on `res.partner` and return the results inli
 | `odoo` doesn't appear in Claude Desktop | Config file JSON is invalid. Run `python3 -m json.tool < <path>` to validate |
 | Tool calls hang for 30 s then fail with `ConnectionError` | `ODOO_URL` not reachable from your machine. Try `curl -I <url>` |
 | `OdooAuthError` on first call | `ODOO_USERNAME` typo, `ODOO_API_KEY` revoked, or `ODOO_DB` doesn't exist |
-| Everything works but tools never show up after `pnpm publish` | npx cache is stale — run `npx clear-npx-cache` or use a pinned version like `@netlinks/odoo-mcp@0.1.0` |
+| Everything works but tools never show up after `pnpm publish` | npx cache is stale — run `npx clear-npx-cache` or use a pinned version like `@netlinksinc/odoo-mcp@0.1.0` |
 | Need to see Odoo's Python traceback | Add `"ODOO_MCP_DEBUG": "1"` to the `env` block and restart Claude Desktop |
 
 Server log lines go to Claude Desktop's process log (Console.app on macOS, filter for `Claude`). For a dedicated log file, add `"ODOO_MCP_LOG_FILE": "/tmp/odoo-mcp.log"` to the `env` block.

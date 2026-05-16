@@ -1,4 +1,4 @@
-# API Reference — @netlinks/odoo-client
+# API Reference — @netlinksinc/odoo-client
 
 Standalone TypeScript JSON-RPC client for Odoo 19. Zero MCP dependency; usable in any Node.js or Bun project.
 
@@ -218,7 +218,7 @@ Low-level single-request transport. Composes the JSON-RPC 2.0 envelope, POSTs to
 
 ```ts
 // Example: direct RPC call (prefer OdooClient for normal use)
-import { jsonRpc } from '@netlinks/odoo-client';
+import { jsonRpc } from '@netlinksinc/odoo-client';
 
 const result = await jsonRpc('https://my.odoo.com', '/web/dataset/call_kw', {
   model: 'res.partner',
@@ -479,7 +479,7 @@ async function createAuthStrategy(config: OdooConfig): Promise<AuthStrategy>
 Factory that tries `ApiKeyAuthStrategy` first. If that throws `OdooAuthError`, falls back to `SessionCookieAuthStrategy`. Writes a JSON warning to stderr if `config.url` starts with `http://`.
 
 ```ts
-import { createAuthStrategy, OdooClient } from '@netlinks/odoo-client';
+import { createAuthStrategy, OdooClient } from '@netlinksinc/odoo-client';
 
 // OdooClient.authenticate() calls this internally.
 // Direct use is only needed for custom auth integrations.
@@ -500,7 +500,7 @@ function sanitizeArgs(
 Returns a sanitized copy of `args` with values for any key matching `/password|credit_card|token|secret|api_key/i` replaced by `'[REDACTED]'`. For tools that only accept domains/IDs (`odoo_search_read`, `odoo_read`, `odoo_fields_get`, etc.) the original reference is returned with no clone or traversal. For write-path tools (`odoo_create`, `odoo_write`, `odoo_execute`, `odoo_call_action`) a deep clone is made before redaction — the original `args` is never mutated.
 
 ```ts
-import { sanitizeArgs } from '@netlinks/odoo-client';
+import { sanitizeArgs } from '@netlinksinc/odoo-client';
 
 const safe = sanitizeArgs('odoo_create', {
   model: 'res.users',

@@ -1,7 +1,7 @@
 {
-  "name": "@netlinks/odoo-client",
+  "name": "@netlinksinc/odoo-client",
   "version": "0.1.0",
-  "description": "Standalone TypeScript JSON-RPC client for Odoo 19 — used by @netlinks/odoo-mcp",
+  "description": "Standalone TypeScript JSON-RPC client for Odoo 19 — used by @netlinksinc/odoo-mcp",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -1,4 +1,4 @@
-# Troubleshooting — @netlinks/odoo-mcp
+# Troubleshooting — @netlinksinc/odoo-mcp
 
 Common startup and runtime failures with specific causes and fixes.
 

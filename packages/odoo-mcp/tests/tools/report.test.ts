@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { OdooUserError, OdooAccessError, OdooError } from '@netlinks/odoo-client';
-import type { OdooSession } from '@netlinks/odoo-client';
+import { OdooUserError, OdooAccessError, OdooError } from '@netlinksinc/odoo-client';
+import type { OdooSession } from '@netlinksinc/odoo-client';
 import { registerReportTool } from '../../src/tools/report.js';
 
 // ---------------------------------------------------------------------------

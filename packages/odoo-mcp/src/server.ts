@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { OdooClient, type OdooConfig } from '@netlinks/odoo-client';
+import { OdooClient, type OdooConfig } from '@netlinksinc/odoo-client';
 
 import { type Logger, createLogger } from './logger.js';
 import { runProbe } from './probe.js';

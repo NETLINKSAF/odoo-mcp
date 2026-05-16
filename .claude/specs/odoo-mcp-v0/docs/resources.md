@@ -1,4 +1,4 @@
-# MCP Resource Reference — @netlinks/odoo-mcp
+# MCP Resource Reference — @netlinksinc/odoo-mcp
 
 Seven read-only resources that expose Odoo instance metadata to Claude.
 

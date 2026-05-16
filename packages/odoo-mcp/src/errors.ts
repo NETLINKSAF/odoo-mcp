@@ -1,4 +1,4 @@
-import type { OdooError } from '@netlinks/odoo-client';
+import type { OdooError } from '@netlinksinc/odoo-client';
 
 declare const process: { env: Record<string, string | undefined> };
 

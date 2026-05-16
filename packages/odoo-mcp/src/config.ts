@@ -1,6 +1,6 @@
 // @ts-ignore — node:fs has no types without @types/node (matches logger.ts pattern)
 import { closeSync, openSync } from 'node:fs';
-import type { OdooConfig } from '@netlinks/odoo-client';
+import type { OdooConfig } from '@netlinksinc/odoo-client';
 import { z } from 'zod';
 
 // Minimal ambient declaration — avoids @types/node dependency.

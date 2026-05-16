@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { OdooClient, OdooSession } from '@netlinks/odoo-client';
+import type { OdooClient, OdooSession } from '@netlinksinc/odoo-client';
 
 import type { Logger } from '../logger.js';
 import { registerActionTool } from './action.js';

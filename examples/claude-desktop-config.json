@@ -2,7 +2,7 @@
   "mcpServers": {
     "odoo": {
       "command": "npx",
-      "args": ["@netlinks/odoo-mcp"],
+      "args": ["@netlinksinc/odoo-mcp"],
       "env": {
         "ODOO_URL": "https://your.odoo.example.com",
         "ODOO_DB": "your_database",

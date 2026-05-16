@@ -207,7 +207,7 @@ export class OdooClient {
     return result as Record<string, unknown>;
   }
 }
-// Note: capability probing is implemented in @netlinks/odoo-mcp's probe.ts
+// Note: capability probing is implemented in @netlinksinc/odoo-mcp's probe.ts
 // (the runProbe function) which uses this client's searchRead/execute methods.
 // An earlier probe() method on OdooClient was removed during v0.1 hardening
 // because it duplicated runProbe and was never called from the server path.

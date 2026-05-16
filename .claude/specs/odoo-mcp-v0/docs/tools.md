@@ -1,4 +1,4 @@
-# MCP Tool Reference — @netlinks/odoo-mcp
+# MCP Tool Reference — @netlinksinc/odoo-mcp
 
 Ten tools exposed to Claude over the MCP stdio transport. Every tool returns a single text content block. On error, `isError` is `true` and the text is a JSON object with at minimum `error_type` and `message` fields.
 

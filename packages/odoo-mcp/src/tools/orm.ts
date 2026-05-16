@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { type Context, OdooError, type OdooSession, sanitizeArgs } from '@netlinks/odoo-client';
-import type { OdooClient } from '@netlinks/odoo-client';
+import { type Context, OdooError, type OdooSession, sanitizeArgs } from '@netlinksinc/odoo-client';
+import type { OdooClient } from '@netlinksinc/odoo-client';
 import type { z } from 'zod';
 
 import { buildContext, validateCompanySubset } from '../context.js';

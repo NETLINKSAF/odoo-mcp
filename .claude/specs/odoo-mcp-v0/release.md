@@ -1,10 +1,10 @@
-# Release: `@netlinks/odoo-mcp` v0.1.0
+# Release: `@netlinksinc/odoo-mcp` v0.1.0
 
 Initial release of the Odoo 19 MCP connector. Lets Claude run agentic workflows on any Odoo instance through a generic-only tool surface (works on stock and customized modules, including custom models that didn't exist when this connector was written).
 
 ## Highlights
 
-- **2 npm packages**: `@netlinks/odoo-client` (standalone TypeScript JSON-RPC client) and `@netlinks/odoo-mcp` (the MCP server binary, `odoo-mcp`)
+- **2 npm packages**: `@netlinksinc/odoo-client` (standalone TypeScript JSON-RPC client) and `@netlinksinc/odoo-mcp` (the MCP server binary, `odoo-mcp`)
 - **10 MCP tools**: full ORM (`search_read`, `read`, `create`, `write`, `unlink`, `search_count`) + generic invocation (`execute`, `run_report`, `call_action`) + introspection (`fields_get`)
 - **7 MCP resources**: `odoo://modules`, `odoo://reports`, `odoo://server-actions`, `odoo://companies`, `odoo://currencies`, `odoo://fiscal-year`, `odoo://user-context` — populated once by the startup capability probe, served from memory thereafter
 - **Multi-company aware**: every tool accepts `allowed_company_ids` and `active_company_id`; validated against the authenticated user's session, no override possible
@@ -17,7 +17,7 @@ This is the first public release; the entire codebase is "new". The list below i
 ### Foundation (waves 0–1)
 
 - Workspace scaffolding (pnpm + Biome + Vitest + tsc strict, Node 22+, ESM, `module: Node16`)
-- Two-package split with workspace symlinks (`@netlinks/odoo-client` consumed by `@netlinks/odoo-mcp`)
+- Two-package split with workspace symlinks (`@netlinksinc/odoo-client` consumed by `@netlinksinc/odoo-mcp`)
 - Shared type contracts: `OdooConfig`, `OdooSession`, `Domain`, `Context`, `OdooRecord`, `CompanyContext`, `ProbeResult`
 - Seven typed error classes mapped 1:1 to Odoo Python exceptions (`OdooError`, `OdooAuthError`, `OdooUserError`, `OdooValidationError`, `OdooAccessError`, `OdooMissingError`, `OdooConnectionError`)
 - `jsonRpc()` transport with 30-second timeout (`REQUEST_TIMEOUT_MS`), automatic fault → error mapping, no headers field in the request envelope (cookie injection happens via the headers arg)
@@ -82,14 +82,14 @@ None. This is the initial release; there is no prior public version to break.
 
 ### Deploy via Claude Desktop
 
-1. `npm install -g @netlinks/odoo-mcp` (or use `npx`, see Claude Desktop config below)
+1. `npm install -g @netlinksinc/odoo-mcp` (or use `npx`, see Claude Desktop config below)
 2. Edit `claude_desktop_config.json` (location varies by OS — see Anthropic's MCP docs):
    ```json
    {
      "mcpServers": {
        "odoo": {
          "command": "npx",
-         "args": ["@netlinks/odoo-mcp"],
+         "args": ["@netlinksinc/odoo-mcp"],
          "env": {
            "ODOO_URL": "https://your.odoo.example.com",
            "ODOO_DB": "your_database",
@@ -139,7 +139,7 @@ None. The connector is a read/write client to an existing Odoo instance — it h
 The connector runs as a Claude Desktop / Claude Code MCP subprocess. To roll back:
 
 1. Edit `claude_desktop_config.json` and remove the `"odoo"` entry from `mcpServers`. Restart Claude Desktop. The MCP server stops spawning.
-2. If pinned to a specific version: `npx -y @netlinks/odoo-mcp@<previous-version>` in the config's `args` array.
+2. If pinned to a specific version: `npx -y @netlinksinc/odoo-mcp@<previous-version>` in the config's `args` array.
 3. No Odoo-side cleanup needed — the connector creates no data and writes only via the audit-trailed user account used for auth.
 4. Log files (if `ODOO_MCP_LOG_FILE` was set) persist on disk and can be deleted manually.
 
@@ -181,8 +181,8 @@ When ready for npm:
 
 ```bash
 pnpm -r build
-pnpm publish --filter @netlinks/odoo-client
-pnpm publish --filter @netlinks/odoo-mcp
+pnpm publish --filter @netlinksinc/odoo-client
+pnpm publish --filter @netlinksinc/odoo-mcp
 ```
 
 Requires an npm token with publish rights on the `@netlinks` scope.
