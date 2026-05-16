@@ -12,11 +12,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/farshidghyasi/odoo-mcp.git",
+    "url": "git+https://github.com/NETLINKSAF/odoo-mcp.git",
     "directory": "packages/odoo-client"
   },
-  "homepage": "https://github.com/farshidghyasi/odoo-mcp#readme",
-  "bugs": "https://github.com/farshidghyasi/odoo-mcp/issues",
+  "homepage": "https://github.com/NETLINKSAF/odoo-mcp#readme",
+  "bugs": "https://github.com/NETLINKSAF/odoo-mcp/issues",
   "author": "NETLINKS Inc",
   "type": "module",
   "main": "./dist/index.js",

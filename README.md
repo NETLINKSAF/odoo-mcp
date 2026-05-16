@@ -15,7 +15,7 @@ Odoo 19 MCP server. Lets Claude run agentic workflows on any Odoo instance.
 
 v0.1.x is a **local stdio** MCP server — it runs as a subprocess of whatever spawned it. Today only Claude Code reliably supports that. v0.2 adds a streaming HTTP transport mode so the same binary can be deployed (Fly.io / Render / your VPS) and reached from any remote-MCP client including Claude Desktop's newer connector UI and Claude Cowork.
 
-If you're on Claude Desktop or Cowork today and don't want to wait, [open an issue](https://github.com/farshidghyasi/odoo-mcp/issues) — happy to help bridge.
+If you're on Claude Desktop or Cowork today and don't want to wait, [open an issue](https://github.com/NETLINKSAF/odoo-mcp/issues) — happy to help bridge.
 
 ---
 
