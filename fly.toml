@@ -1,0 +1,38 @@
+# fly.toml — canonical Fly.io deploy config for @netlinksinc/odoo-mcp v0.2+.
+#
+# Replace 'odoo-mcp' with your actual Fly.io app name.
+# Set required secrets before deploying:
+#   fly secrets set ODOO_URL=https://... ODOO_DB=mydb ODOO_USERNAME=admin \
+#     ODOO_API_KEY=<key> MCP_BEARER_TOKEN=$(openssl rand -hex 32)
+
+app = "odoo-mcp"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  MODE = "http"
+  MCP_PORT = "3000"
+
+[[services]]
+  internal_port = 3000
+  protocol = "tcp"
+  force_https = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [[services.http_checks]]
+    interval = "10s"
+    timeout = "2s"
+    grace_period = "5s"
+    path = "/health"
+    method = "GET"
