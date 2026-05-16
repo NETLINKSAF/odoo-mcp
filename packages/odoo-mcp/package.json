@@ -2,6 +2,15 @@
   "name": "@netlinksinc/odoo-mcp",
   "version": "0.1.0",
   "description": "MCP server exposing any Odoo 19 instance to Claude (Desktop, Code, Cowork) — generic-only tool surface, works on stock and customized Odoo",
+  "keywords": ["mcp", "model-context-protocol", "claude", "anthropic", "odoo", "odoo19", "erp", "ai", "agent"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/farshidghyasi/odoo-mcp.git",
+    "directory": "packages/odoo-mcp"
+  },
+  "homepage": "https://github.com/farshidghyasi/odoo-mcp#readme",
+  "bugs": "https://github.com/farshidghyasi/odoo-mcp/issues",
+  "author": "NETLINKS Inc",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
