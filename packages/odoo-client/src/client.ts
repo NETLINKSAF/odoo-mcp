@@ -3,7 +3,13 @@ import { OdooAuthError } from './errors.js';
 import { jsonRpc } from './rpc.js';
 import type { Context, Domain, OdooConfig, OdooRecord, OdooSession } from './types.js';
 
-const CALL_KW = '/web/dataset/call_kw';
+// Odoo's classic external-API endpoint. Every authenticated ORM call hits
+// /jsonrpc with `service: "object", method: "execute_kw"` and the API key
+// passed as the password parameter in the args array. This replaces the
+// /web/dataset/call_kw endpoint used in v0.1, which only worked under the
+// /web/session/authenticate cookie flow (incompatible with API keys on
+// modern Odoo configurations).
+const JSONRPC = '/jsonrpc';
 
 // US-4 AC-9: searchRead applies an 80-row default to prevent unbounded payloads.
 const DEFAULT_SEARCH_LIMIT = 80;
@@ -46,6 +52,24 @@ export class OdooClient {
     return this.session;
   }
 
+  /**
+   * Wrap a single `execute_kw` call. Centralises the wire-format so each ORM
+   * method below just declares the model + method + positional args + kwargs.
+   */
+  private async executeKw(
+    model: string,
+    method: string,
+    args: unknown[],
+    kwargs: Record<string, unknown>,
+  ): Promise<unknown> {
+    const session = this.requireSession();
+    return jsonRpc(this.config.url, JSONRPC, {
+      service: 'object',
+      method: 'execute_kw',
+      args: [this.config.db, session.uid, this.config.apiKey, model, method, args, kwargs],
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // ORM methods
   // ---------------------------------------------------------------------------
@@ -56,7 +80,6 @@ export class OdooClient {
     fields?: string[],
     options?: { limit?: number; offset?: number; order?: string; context?: Context },
   ): Promise<OdooRecord[]> {
-    this.requireSession();
     const { limit, offset, order, context } = options ?? {};
     const kwargs = compact({
       fields,
@@ -65,12 +88,7 @@ export class OdooClient {
       order,
       context,
     });
-    const result = await jsonRpc(this.config.url, CALL_KW, {
-      model,
-      method: 'search_read',
-      args: [domain],
-      kwargs,
-    });
+    const result = await this.executeKw(model, 'search_read', [domain], kwargs);
     return result as OdooRecord[];
   }
 
@@ -80,14 +98,8 @@ export class OdooClient {
     fields?: string[],
     context?: Context,
   ): Promise<OdooRecord[]> {
-    this.requireSession();
     const kwargs = compact({ fields, context });
-    const result = await jsonRpc(this.config.url, CALL_KW, {
-      model,
-      method: 'read',
-      args: [ids],
-      kwargs,
-    });
+    const result = await this.executeKw(model, 'read', [ids], kwargs);
     return result as OdooRecord[];
   }
 
@@ -96,14 +108,8 @@ export class OdooClient {
     values: Record<string, unknown> | Record<string, unknown>[],
     context?: Context,
   ): Promise<number | number[]> {
-    this.requireSession();
     const kwargs = compact({ context });
-    const result = await jsonRpc(this.config.url, CALL_KW, {
-      model,
-      method: 'create',
-      args: [values],
-      kwargs,
-    });
+    const result = await this.executeKw(model, 'create', [values], kwargs);
     return result as number | number[];
   }
 
@@ -113,38 +119,20 @@ export class OdooClient {
     values: Record<string, unknown>,
     context?: Context,
   ): Promise<boolean> {
-    this.requireSession();
     const kwargs = compact({ context });
-    const result = await jsonRpc(this.config.url, CALL_KW, {
-      model,
-      method: 'write',
-      args: [ids, values],
-      kwargs,
-    });
+    const result = await this.executeKw(model, 'write', [ids, values], kwargs);
     return result as boolean;
   }
 
   async unlink(model: string, ids: number[], context?: Context): Promise<boolean> {
-    this.requireSession();
     const kwargs = compact({ context });
-    const result = await jsonRpc(this.config.url, CALL_KW, {
-      model,
-      method: 'unlink',
-      args: [ids],
-      kwargs,
-    });
+    const result = await this.executeKw(model, 'unlink', [ids], kwargs);
     return result as boolean;
   }
 
   async searchCount(model: string, domain: Domain, context?: Context): Promise<number> {
-    this.requireSession();
     const kwargs = compact({ context });
-    const result = await jsonRpc(this.config.url, CALL_KW, {
-      model,
-      method: 'search_count',
-      args: [domain],
-      kwargs,
-    });
+    const result = await this.executeKw(model, 'search_count', [domain], kwargs);
     return result as number;
   }
 
@@ -155,14 +143,8 @@ export class OdooClient {
     kwargs?: Record<string, unknown>,
     context?: Context,
   ): Promise<unknown> {
-    this.requireSession();
-    const result = await jsonRpc(this.config.url, CALL_KW, {
-      model,
-      method,
-      args: args ?? [],
-      kwargs: { ...(kwargs ?? {}), context },
-    });
-    return result;
+    const mergedKwargs = compact({ ...(kwargs ?? {}), context });
+    return this.executeKw(model, method, args ?? [], mergedKwargs);
   }
 
   async runReport(
@@ -170,13 +152,13 @@ export class OdooClient {
     docIds: number[],
     context?: Context,
   ): Promise<{ content: string; contentType: 'application/pdf' }> {
-    this.requireSession();
-    const result = await jsonRpc(this.config.url, CALL_KW, {
-      model: 'ir.actions.report',
-      method: '_render_qweb_pdf',
-      args: [reportId, docIds],
-      kwargs: compact({ context }),
-    });
+    const kwargs = compact({ context });
+    const result = await this.executeKw(
+      'ir.actions.report',
+      '_render_qweb_pdf',
+      [reportId, docIds],
+      kwargs,
+    );
     // Odoo returns [content_base64, content_type] tuple
     const tuple = result as [string, string];
     return { content: tuple[0], contentType: 'application/pdf' };
@@ -196,14 +178,8 @@ export class OdooClient {
     attributes?: string[],
     context?: Context,
   ): Promise<Record<string, unknown>> {
-    this.requireSession();
     const kwargs = compact({ allfields: attributes ?? [], context });
-    const result = await jsonRpc(this.config.url, CALL_KW, {
-      model,
-      method: 'fields_get',
-      args: [],
-      kwargs,
-    });
+    const result = await this.executeKw(model, 'fields_get', [], kwargs);
     return result as Record<string, unknown>;
   }
 }

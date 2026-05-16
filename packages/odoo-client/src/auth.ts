@@ -7,84 +7,145 @@ import type { Context, OdooConfig, OdooSession } from './types.js';
 
 /**
  * Pluggable Odoo authentication interface. Two strategies ship out of the
- * box: ApiKeyAuthStrategy (preferred) and SessionCookieAuthStrategy (fallback).
+ * box: ApiKeyAuthStrategy (preferred) and SessionCookieAuthStrategy (legacy
+ * fallback, kept for completeness but unused by createAuthStrategy on the
+ * primary path).
  *
  * `authenticate(config)` performs the login round-trip and returns the populated
  * OdooSession.
  *
- * `applyAuth(request, session)` is a structural extension point. Both shipped
- * strategies return the request unchanged because JsonRpcRequest carries no
- * `headers` field — cookie/session-id injection happens at the call site,
- * via the headers arg to `jsonRpc()`. Custom strategies that want to mutate
- * the request envelope itself can do so here.
+ * `applyAuth(request, session)` is a structural extension point — the shipped
+ * strategies return the request unchanged because authentication is folded
+ * into every /jsonrpc call by way of the `[db, uid, api_key, …]` args array.
  */
 export interface AuthStrategy {
   authenticate(config: OdooConfig): Promise<OdooSession>;
   applyAuth(request: JsonRpcRequest, session: OdooSession): JsonRpcRequest;
 }
 
-/** Extract and validate the session fields from a raw authenticate result */
-function extractSession(raw: unknown): OdooSession {
-  if (raw === null || typeof raw !== 'object') {
-    throw new OdooAuthError('Invalid authenticate response: expected object');
-  }
-  const r = raw as Record<string, unknown>;
+// ---------------------------------------------------------------------------
+// Wire helpers for Odoo's classic /jsonrpc endpoint
+// ---------------------------------------------------------------------------
+// /jsonrpc takes `{ service, method, args }` where args is a positional array.
+// `common.authenticate(db, login, password, user_agent_env)` returns either a
+// uid integer on success or `false` on auth failure (NOT an error object).
+// `object.execute_kw(db, uid, password, model, method, args, kwargs)` is the
+// generic ORM invocation path.
 
-  const uid = r.uid;
-  if (typeof uid !== 'number') {
-    throw new OdooAuthError('Invalid authenticate response: missing uid');
-  }
+const JSONRPC = '/jsonrpc';
 
-  const companyId = r.company_id;
-  if (typeof companyId !== 'number') {
-    throw new OdooAuthError('Invalid authenticate response: missing company_id');
+async function commonAuthenticate(
+  url: string,
+  db: string,
+  login: string,
+  password: string,
+): Promise<number> {
+  const result = await jsonRpc(url, JSONRPC, {
+    service: 'common',
+    method: 'authenticate',
+    args: [db, login, password, {}],
+  });
+  // Odoo returns the uid on success, `false` on failure
+  if (result === false || result === null || typeof result !== 'number') {
+    throw new OdooAuthError('Access Denied — login or API key rejected');
   }
-
-  const rawAllowed = r.allowed_company_ids;
-  if (!Array.isArray(rawAllowed)) {
-    throw new OdooAuthError('Invalid authenticate response: missing allowed_company_ids');
-  }
-  const allowedCompanyIds = rawAllowed as number[];
-
-  const userContext = r.user_context;
-  if (userContext === null || typeof userContext !== 'object' || Array.isArray(userContext)) {
-    throw new OdooAuthError('Invalid authenticate response: missing user_context');
-  }
-
-  return {
-    uid,
-    companyId,
-    allowedCompanyIds,
-    userContext: userContext as Context,
-  };
+  return result;
 }
 
+async function executeKw(
+  url: string,
+  db: string,
+  uid: number,
+  password: string,
+  model: string,
+  method: string,
+  args: unknown[],
+  kwargs: Record<string, unknown>,
+): Promise<unknown> {
+  return jsonRpc(url, JSONRPC, {
+    service: 'object',
+    method: 'execute_kw',
+    args: [db, uid, password, model, method, args, kwargs],
+  });
+}
+
+/** Fetch the minimum user metadata needed to populate the OdooSession. */
+async function loadSessionMetadata(
+  url: string,
+  db: string,
+  uid: number,
+  password: string,
+): Promise<{ companyId: number; allowedCompanyIds: number[]; userContext: Context }> {
+  // First call: read company_id / company_ids from res.users
+  const rows = (await executeKw(
+    url,
+    db,
+    uid,
+    password,
+    'res.users',
+    'read',
+    [[uid], ['company_id', 'company_ids']],
+    {},
+  )) as Array<{ company_id?: [number, string]; company_ids?: number[] }>;
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new OdooAuthError(`Authenticated as uid=${uid} but res.users.read returned no row`);
+  }
+  const row = rows[0];
+  if (!row.company_id || !row.company_ids) {
+    throw new OdooAuthError('Authenticated but res.users row missing company_id / company_ids');
+  }
+  const companyId = row.company_id[0];
+  const allowedCompanyIds = row.company_ids;
+
+  // Second call: context_get returns lang, tz, uid, and any installed modules' context keys
+  const userContext = (await executeKw(
+    url,
+    db,
+    uid,
+    password,
+    'res.users',
+    'context_get',
+    [],
+    {},
+  )) as Context;
+
+  return { companyId, allowedCompanyIds, userContext };
+}
+
+/**
+ * Primary auth strategy: uses Odoo's classic /jsonrpc external-API endpoints
+ * (`common.authenticate` + `object.execute_kw`). API keys are passed as the
+ * password parameter on every call — there is no server-side session cookie.
+ *
+ * This is the only flow that works with API-key auth across all modern Odoo
+ * configurations. The earlier `/web/session/authenticate` flow only works
+ * when the user's web password happens to equal the value passed in
+ * ODOO_API_KEY — a rare configuration.
+ */
 export class ApiKeyAuthStrategy implements AuthStrategy {
   async authenticate(config: OdooConfig): Promise<OdooSession> {
-    const result = await jsonRpc(config.url, '/web/session/authenticate', {
-      db: config.db,
-      login: config.username,
-      password: config.apiKey,
-    });
-    return extractSession(result);
+    const uid = await commonAuthenticate(config.url, config.db, config.username, config.apiKey);
+    const { companyId, allowedCompanyIds, userContext } = await loadSessionMetadata(
+      config.url,
+      config.db,
+      uid,
+      config.apiKey,
+    );
+    return { uid, companyId, allowedCompanyIds, userContext };
   }
 
-  applyAuth(request: JsonRpcRequest, session: OdooSession): JsonRpcRequest {
-    if (!session.sessionId) {
-      return request;
-    }
-    // JsonRpcRequest does not carry headers; return as-is — callers pass headers separately via jsonRpc
+  applyAuth(request: JsonRpcRequest, _session: OdooSession): JsonRpcRequest {
+    // No-op: auth is folded into every /jsonrpc call via the args array.
     return request;
   }
 }
 
 /**
- * SessionCookieAuthStrategy — fallback when API-key auth is unavailable.
- *
- * Calls fetch directly (mirroring jsonRpc's request shape) so it can read
- * the Set-Cookie header from the response and extract the session_id token.
- * applyAuth then injects `Cookie: session_id=<value>` into the headers map
- * that the caller passes to jsonRpc as its 4th argument.
+ * Legacy fallback strategy. Targets `/web/session/authenticate`, which only
+ * works when the user's web password equals the value passed in ODOO_API_KEY.
+ * Retained for the rare case where an Odoo instance has been configured that
+ * way; not used by the primary createAuthStrategy code path going forward.
  */
 export class SessionCookieAuthStrategy implements AuthStrategy {
   async authenticate(config: OdooConfig): Promise<OdooSession> {
@@ -124,7 +185,12 @@ export class SessionCookieAuthStrategy implements AuthStrategy {
     const json = (await response.json()) as {
       jsonrpc: '2.0';
       id: number;
-      result?: unknown;
+      result?: {
+        uid?: number;
+        company_id?: number;
+        allowed_company_ids?: number[];
+        user_context?: Context;
+      };
       error?: {
         code: number;
         message: string;
@@ -140,29 +206,31 @@ export class SessionCookieAuthStrategy implements AuthStrategy {
       throw new OdooError('ServerError', message, undefined, undefined, debug);
     }
 
-    const session = extractSession(json.result);
-
-    // Parse session_id from Set-Cookie header
-    const setCookie = response.headers.get('set-cookie') ?? '';
-    const match = /session_id=([^;]+)/.exec(setCookie);
-    if (match) {
-      session.sessionId = match[1];
+    const result = json.result;
+    if (!result || typeof result.uid !== 'number') {
+      throw new OdooAuthError('web/session/authenticate returned no uid');
     }
-
-    return session;
+    return {
+      uid: result.uid,
+      companyId: result.company_id ?? 1,
+      allowedCompanyIds: result.allowed_company_ids ?? [result.company_id ?? 1],
+      userContext: result.user_context ?? {},
+    };
   }
 
-  applyAuth(request: JsonRpcRequest, session: OdooSession): JsonRpcRequest {
-    // Headers are passed separately to jsonRpc; this method returns the request
-    // unchanged. The caller is expected to build headers using session.sessionId.
-    // We return the request unmodified — cookie injection happens at the call site.
+  applyAuth(request: JsonRpcRequest, _session: OdooSession): JsonRpcRequest {
     return request;
   }
 }
 
 /**
- * Factory: tries ApiKeyAuthStrategy; falls back to SessionCookieAuthStrategy on
- * OdooAuthError. Writes a plaintext-warning to stderr when url is http://.
+ * Factory: uses ApiKeyAuthStrategy (classic /jsonrpc external API). Writes a
+ * plaintext warning to stderr when the URL is http:// per US-2 AC-5.
+ *
+ * Note: SessionCookieAuthStrategy is no longer attempted as a fallback because
+ * /web/session/authenticate is incompatible with API-key auth on modern Odoo
+ * instances. If callers explicitly need cookie auth, they can instantiate
+ * SessionCookieAuthStrategy directly.
  */
 export async function createAuthStrategy(config: OdooConfig): Promise<AuthStrategy> {
   if (config.url.startsWith('http://')) {
@@ -173,17 +241,5 @@ export async function createAuthStrategy(config: OdooConfig): Promise<AuthStrate
       })}\n`,
     );
   }
-
-  const apiKey = new ApiKeyAuthStrategy();
-  try {
-    await apiKey.authenticate(config);
-    return apiKey;
-  } catch (err: unknown) {
-    if (err instanceof OdooAuthError) {
-      const cookie = new SessionCookieAuthStrategy();
-      await cookie.authenticate(config);
-      return cookie;
-    }
-    throw err;
-  }
+  return new ApiKeyAuthStrategy();
 }
