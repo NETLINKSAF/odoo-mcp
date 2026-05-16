@@ -124,4 +124,76 @@ describe('loadConfig', () => {
     // Should not throw
     expect(() => JSON.parse(written)).not.toThrow();
   });
+
+  // --- T-03: MODE / MCP_PORT / MCP_BEARER_TOKEN tests ---
+
+  // MODE unset → defaults to stdio, no http field
+  it('defaults mode to stdio and http to undefined when MODE is not set', () => {
+    const config = loadConfig(VALID_ENV);
+    expect(config.mode).toBe('stdio');
+    expect(config.http).toBeUndefined();
+  });
+
+  // MODE=http + MCP_BEARER_TOKEN=tok → mode http, http.port 3000, http.bearerToken tok
+  it('returns mode=http with default port 3000 when MODE=http and bearer token provided', () => {
+    const config = loadConfig({ ...VALID_ENV, MODE: 'http', MCP_BEARER_TOKEN: 'tok' });
+    expect(config.mode).toBe('http');
+    expect(config.http).toBeDefined();
+    expect(config.http!.port).toBe(3000);
+    expect(config.http!.bearerToken).toBe('tok');
+  });
+
+  // MODE=http + MCP_PORT=8080 → http.port 8080
+  it('respects MCP_PORT when MODE=http', () => {
+    const config = loadConfig({ ...VALID_ENV, MODE: 'http', MCP_BEARER_TOKEN: 'tok', MCP_PORT: '8080' });
+    expect(config.http!.port).toBe(8080);
+  });
+
+  // MODE=http + MCP_BEARER_TOKEN missing → exits 1, stderr config_error missing MCP_BEARER_TOKEN
+  it('exits 1 with missing MCP_BEARER_TOKEN when MODE=http and token absent', () => {
+    expect(() => loadConfig({ ...VALID_ENV, MODE: 'http' })).toThrow('exit:1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+
+    const written = (stderrSpy.mock.calls[0]?.[0] as string) ?? '';
+    const payload = JSON.parse(written);
+    expect(payload.event).toBe('config_error');
+    expect(payload.missing).toContain('MCP_BEARER_TOKEN');
+  });
+
+  // MODE=http + MCP_BEARER_TOKEN empty string → exits 1
+  it('exits 1 with missing MCP_BEARER_TOKEN when MODE=http and token is empty string', () => {
+    expect(() => loadConfig({ ...VALID_ENV, MODE: 'http', MCP_BEARER_TOKEN: '' })).toThrow('exit:1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+
+    const written = (stderrSpy.mock.calls[0]?.[0] as string) ?? '';
+    const payload = JSON.parse(written);
+    expect(payload.event).toBe('config_error');
+    expect(payload.missing).toContain('MCP_BEARER_TOKEN');
+  });
+
+  // MODE=invalid → exits 1, stderr config_error with invalid: ['MODE']
+  it('exits 1 with invalid MODE when an unsupported value is provided', () => {
+    expect(() => loadConfig({ ...VALID_ENV, MODE: 'invalid' })).toThrow('exit:1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+
+    const written = (stderrSpy.mock.calls[0]?.[0] as string) ?? '';
+    const payload = JSON.parse(written);
+    expect(payload.event).toBe('config_error');
+    expect(payload.invalid).toContain('MODE');
+  });
+
+  // MODE=stdio + MCP_BEARER_TOKEN missing → no exit (backwards compatible, US-2 AC-5)
+  it('succeeds without exit when MODE=stdio and MCP_BEARER_TOKEN is absent', () => {
+    const config = loadConfig(VALID_ENV);
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(config.mode).toBe('stdio');
+  });
+
+  // Security: sentinel API key NOT leaked when MCP_BEARER_TOKEN missing (MODE=http)
+  it('does not leak ODOO_API_KEY value when MODE=http and MCP_BEARER_TOKEN is absent', () => {
+    expect(() => loadConfig({ ...VALID_ENV, MODE: 'http' })).toThrow('exit:1');
+
+    const written = (stderrSpy.mock.calls[0]?.[0] as string) ?? '';
+    expect(written).not.toContain('test-sentinel-value-do-not-leak');
+  });
 });

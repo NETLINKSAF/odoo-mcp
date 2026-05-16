@@ -165,4 +165,108 @@ describe('createLogger — with logFile', () => {
     const fileContents = readFileSync(logPath, 'utf8');
     expect(fileContents).not.toMatch(/api_key/i);
   });
+
+  // T-02 AC-3: log file created with 0o600 permissions (explicit coverage)
+  it('log file created with 0o600 permissions (T-02 AC-3)', () => {
+    const path = tmpLogPath('t02-perms');
+    const logger = createLogger(path);
+    logger.shutdown();
+    try {
+      const mode = statSync(path).mode & 0o777;
+      expect(mode).toBe(0o600);
+    } finally {
+      if (existsSync(path)) unlinkSync(path);
+    }
+  });
+});
+
+describe('createLogger — HTTP observability fields (T-02)', () => {
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // T-02 AC-1: client_ip and user_agent present when supplied
+  it('toolCall with client_ip and user_agent emits both fields in JSON', () => {
+    const logger = createLogger();
+    logger.toolCall({
+      tool: 't',
+      args_sanitized: {},
+      latency_ms: 5,
+      status: 'ok',
+      client_ip: '1.2.3.4',
+      user_agent: 'TestAgent/1',
+    });
+
+    const line = stderrSpy.mock.calls[0][0] as string;
+    const obj = JSON.parse(line.trim()) as Record<string, unknown>;
+    expect(obj['client_ip']).toBe('1.2.3.4');
+    expect(obj['user_agent']).toBe('TestAgent/1');
+  });
+
+  // T-02 AC-2: client_ip and user_agent absent when not supplied
+  it('toolCall without HTTP fields omits client_ip and user_agent from JSON', () => {
+    const logger = createLogger();
+    logger.toolCall({
+      tool: 't',
+      args_sanitized: {},
+      latency_ms: 5,
+      status: 'ok',
+    });
+
+    const line = stderrSpy.mock.calls[0][0] as string;
+    const obj = JSON.parse(line.trim()) as Record<string, unknown>;
+    expect(obj).not.toHaveProperty('client_ip');
+    expect(obj).not.toHaveProperty('user_agent');
+  });
+
+  // T-02: request_id present when supplied
+  it('toolCall with request_id emits request_id in JSON', () => {
+    const logger = createLogger();
+    logger.toolCall({
+      tool: 't',
+      args_sanitized: {},
+      latency_ms: 5,
+      status: 'ok',
+      request_id: 'abc-123',
+    });
+
+    const line = stderrSpy.mock.calls[0][0] as string;
+    const obj = JSON.parse(line.trim()) as Record<string, unknown>;
+    expect(obj['request_id']).toBe('abc-123');
+  });
+
+  // T-02 AC-4: startup with mode emits mode key
+  it('startup with mode: "http" emits mode key in JSON', () => {
+    const logger = createLogger();
+    logger.startup({
+      odoo_url: 'https://demo.odoo.com',
+      odoo_db: 'mydb',
+      odoo_username: 'admin',
+      mode: 'http',
+    });
+
+    const line = stderrSpy.mock.calls[0][0] as string;
+    const obj = JSON.parse(line.trim()) as Record<string, unknown>;
+    expect(obj['mode']).toBe('http');
+  });
+
+  // T-02 AC-4: startup without mode omits mode key
+  it('startup without mode omits mode key from JSON', () => {
+    const logger = createLogger();
+    logger.startup({
+      odoo_url: 'https://demo.odoo.com',
+      odoo_db: 'mydb',
+      odoo_username: 'admin',
+    });
+
+    const line = stderrSpy.mock.calls[0][0] as string;
+    const obj = JSON.parse(line.trim()) as Record<string, unknown>;
+    expect(obj).not.toHaveProperty('mode');
+  });
 });

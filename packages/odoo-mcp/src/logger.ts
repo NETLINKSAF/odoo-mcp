@@ -12,8 +12,16 @@ export interface Logger {
     latency_ms: number;
     status: 'ok' | 'error';
     error?: string;
+    client_ip?: string; // HTTP mode only
+    user_agent?: string; // HTTP mode only
+    request_id?: string; // HTTP mode only (UUIDv4, caller-supplied)
   }): void;
-  startup(info: { odoo_url: string; odoo_db: string; odoo_username: string }): void;
+  startup(info: {
+    odoo_url: string;
+    odoo_db: string;
+    odoo_username: string;
+    mode?: string; // optional — 'stdio' or 'http'
+  }): void;
   shutdown(): void;
 }
 
@@ -51,18 +59,32 @@ export function createLogger(logFile?: string): Logger {
       if (entry.error !== undefined) {
         obj.error = entry.error;
       }
+      // HTTP observability fields — omit entirely when absent
+      if (entry.client_ip !== undefined) {
+        obj.client_ip = entry.client_ip;
+      }
+      if (entry.user_agent !== undefined) {
+        obj.user_agent = entry.user_agent;
+      }
+      if (entry.request_id !== undefined) {
+        obj.request_id = entry.request_id;
+      }
       emit(JSON.stringify(obj));
     },
 
     startup(info) {
       // MUST NOT include odoo_api_key or any key matching /api_key/i (US-9 AC-2)
-      const obj = {
+      const obj: Record<string, unknown> = {
         ts: new Date().toISOString(),
         event: 'startup',
         odoo_url: info.odoo_url,
         odoo_db: info.odoo_db,
         odoo_username: info.odoo_username,
       };
+      // Omit mode key entirely when absent
+      if (info.mode !== undefined) {
+        obj.mode = info.mode;
+      }
       emit(JSON.stringify(obj));
     },
 

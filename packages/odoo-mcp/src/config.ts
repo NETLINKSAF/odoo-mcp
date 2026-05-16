@@ -1,7 +1,8 @@
 // @ts-ignore — node:fs has no types without @types/node (matches logger.ts pattern)
 import { closeSync, openSync } from 'node:fs';
-import type { OdooConfig } from '@netlinksinc/odoo-client';
 import { z } from 'zod';
+// AppConfig defined in types.ts (T-01 — must land first or be stubbed)
+import type { AppConfig } from './types.js';
 
 // Minimal ambient declaration — avoids @types/node dependency.
 declare const process: {
@@ -9,11 +10,6 @@ declare const process: {
   stderr: { write: (data: string) => boolean };
   exit: (code?: number) => never;
 };
-
-export interface AppConfig {
-  odoo: OdooConfig;
-  logFile?: string;
-}
 
 const configSchema = z.object({
   ODOO_URL: z
@@ -24,6 +20,9 @@ const configSchema = z.object({
   ODOO_USERNAME: z.string().min(1),
   ODOO_API_KEY: z.string().min(1),
   ODOO_MCP_LOG_FILE: z.string().optional(),
+  MODE: z.enum(['stdio', 'http']).default('stdio'),
+  MCP_PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  MCP_BEARER_TOKEN: z.string().optional(),
 });
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {
@@ -53,6 +52,16 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   // TypeScript discriminated union: result.success is true here, so result.data is defined.
   const parsed = result.data;
 
+  if (
+    parsed.MODE === 'http' &&
+    (parsed.MCP_BEARER_TOKEN === undefined || parsed.MCP_BEARER_TOKEN === '')
+  ) {
+    process.stderr.write(
+      `${JSON.stringify({ event: 'config_error', missing: ['MCP_BEARER_TOKEN'] })}\n`,
+    );
+    process.exit(1);
+  }
+
   if (parsed.ODOO_MCP_LOG_FILE !== undefined) {
     const logFile = parsed.ODOO_MCP_LOG_FILE;
     try {
@@ -75,5 +84,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       apiKey: parsed.ODOO_API_KEY,
     },
     logFile: parsed.ODOO_MCP_LOG_FILE,
+    mode: parsed.MODE,
+    http:
+      parsed.MODE === 'http'
+        ? {
+            port: parsed.MCP_PORT,
+            // biome-ignore lint/style/noNonNullAssertion: validated by the conditional exit guard above (MODE=http + empty token → process.exit(1))
+            bearerToken: parsed.MCP_BEARER_TOKEN!,
+          }
+        : undefined,
   };
 }
