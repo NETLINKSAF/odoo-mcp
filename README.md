@@ -19,6 +19,10 @@ If you're on Claude Desktop or Cowork today and don't want to wait, [open an iss
 
 ---
 
+> ⚠️ **Read this first.** This connector gives Claude **direct read and write access** to your Odoo data — including the ability to `create`, `write`, and `unlink` records. Claude is an AI; it can misinterpret requests, hallucinate field names, or perform destructive operations you didn't intend. **Test against a development Odoo before pointing it at production**, and use a dedicated `mcp_user` with Odoo security groups scoped to only what you need. The maintainers accept no liability for data loss, business interruption, or any other harm — see the [Disclaimer](#disclaimer) section below.
+
+---
+
 ## Claude Code quick install
 
 **Prereqs.** Node 22+ on your PATH, Claude Code installed, an Odoo 15+ instance you can reach.
@@ -137,6 +141,23 @@ Structured JSON log lines go to stderr unconditionally. Set `ODOO_MCP_LOG_FILE` 
 **v0.2** — adds a streaming HTTP transport mode (env var `MODE=http`), bearer-token auth, and a Fly.io deploy guide. Unlocks Claude Desktop's newer connector UI and Claude Cowork. Same npm package, same 10 tools, same 7 resources.
 
 **v0.3** — multi-tenant OAuth 2.1 IdP. Hosted as a free service so any Cowork user can connect their own Odoo without self-deploying. Eligibility for Anthropic's connector directory.
+
+---
+
+## Disclaimer
+
+This software is provided **AS IS**, without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and non-infringement. In no event shall NETLINKS Inc, the contributors, or any other party be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software.
+
+What this means in practice:
+
+- **Data loss and modification.** Claude can call `odoo_unlink` to delete records, `odoo_write` to modify them, and `odoo_create` to add them. If you grant the connector access to a production Odoo instance and Claude performs a destructive operation, the responsibility is yours — set up appropriate Odoo security groups, audit trails, and backups before deploying.
+- **Operational impact.** Claude may issue many RPC requests per query, especially `odoo_search_read` against large tables. Test query patterns against a development Odoo before exposing the connector to production workloads.
+- **Information disclosure.** The connector transmits your Odoo data to Anthropic's Claude API as part of normal operation. Review Anthropic's data handling policy before connecting Odoo instances containing personal data, financial records, or regulated information.
+- **No affiliation.** NETLINKS Inc is not affiliated with Anthropic, Odoo SA, or any of their subsidiaries. "Claude", "Anthropic", "Odoo", and related marks are the property of their respective owners.
+- **Security.** This connector authenticates against Odoo using an API key configured at deploy time. The key has the same permissions as the Odoo user who created it. Use a dedicated, scope-limited `mcp_user` rather than a personal or admin account.
+- **Legal review.** This README is not legal advice. If you intend to deploy this connector in a regulated environment (healthcare, financial services, EU GDPR-sensitive data), consult your own counsel before doing so.
+
+The full license is at `LICENSE`. By using this software you agree to the terms of the MIT License and this disclaimer.
 
 ---
 
