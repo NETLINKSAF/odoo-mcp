@@ -1,8 +1,15 @@
 {
   "name": "@netlinksinc/odoo-client",
-  "version": "0.1.0",
-  "description": "Standalone TypeScript JSON-RPC client for Odoo 19 — used by @netlinksinc/odoo-mcp",
-  "keywords": ["odoo", "odoo19", "json-rpc", "client", "typescript", "erp"],
+  "version": "0.1.1",
+  "description": "Standalone TypeScript JSON-RPC client for Odoo 19 \u2014 used by @netlinksinc/odoo-mcp",
+  "keywords": [
+    "odoo",
+    "odoo19",
+    "json-rpc",
+    "client",
+    "typescript",
+    "erp"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/farshidghyasi/odoo-mcp.git",
@@ -20,9 +27,13 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "license": "MIT",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
