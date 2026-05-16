@@ -14,16 +14,26 @@ declare const process: {
   on: (event: string, handler: () => Promise<void>) => void;
 };
 
+/** NFR-3: If startup does not complete within 30 s, exit with code 1. */
+const STARTUP_TIMEOUT_MS = 30_000;
+
 (async () => {
   try {
     // 1. Load and validate configuration (exits 1 itself on invalid env).
     const config = loadConfig();
 
-    // 2. Wire all subsystems together.
-    const { server, logger, probeOk } = await createOdooMcpServer({
-      odooConfig: config.odoo,
-      logFile: config.logFile,
-    });
+    // 2. Wire all subsystems together — race against the startup timeout.
+    //    If createOdooMcpServer hangs (e.g. Odoo unreachable), the timeout
+    //    fires and the process exits with startup_error / code 1 (NFR-3).
+    const { server, logger, probeOk } = await Promise.race([
+      createOdooMcpServer({
+        odooConfig: config.odoo,
+        logFile: config.logFile,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('startup_timeout')), STARTUP_TIMEOUT_MS),
+      ),
+    ]);
 
     // 3. Log startup info before connecting (AC-3 — startup BEFORE connect).
     logger.startup({
