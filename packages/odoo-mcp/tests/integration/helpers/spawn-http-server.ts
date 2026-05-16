@@ -15,11 +15,11 @@ import { spawn } from 'node:child_process';
 // @ts-ignore — @types/node is not installed; resolves correctly at Node.js runtime
 import { existsSync } from 'node:fs';
 // @ts-ignore — @types/node is not installed; resolves correctly at Node.js runtime
-import { createInterface } from 'node:readline';
-// @ts-ignore — @types/node is not installed; resolves correctly at Node.js runtime
 import { createServer as createNetServer } from 'node:net';
 // @ts-ignore — @types/node is not installed; resolves correctly at Node.js runtime
 import { resolve as pathResolve } from 'node:path';
+// @ts-ignore — @types/node is not installed; resolves correctly at Node.js runtime
+import { createInterface } from 'node:readline';
 
 export interface SpawnedServer {
   port: number;
@@ -162,7 +162,7 @@ export async function spawnHttpServer(
 
   return new Promise<SpawnedServer>((resolve, reject) => {
     // @ts-ignore — createInterface options type requires @types/node
-    const rl = createInterface({ input: proc.stderr, crlfDelay: Infinity });
+    const rl = createInterface({ input: proc.stderr, crlfDelay: Number.POSITIVE_INFINITY });
 
     // @ts-ignore — readline Interface event types require @types/node
     (rl as { on: (event: string, cb: (line: string) => void) => void }).on(
@@ -178,7 +178,7 @@ export async function spawnHttpServer(
         if (
           parsed !== null &&
           typeof parsed === 'object' &&
-          (parsed as Record<string, unknown>)['event'] === 'startup'
+          (parsed as Record<string, unknown>).event === 'startup'
         ) {
           // @ts-ignore — rl.close type requires @types/node
           (rl as { close: () => void }).close();
@@ -194,9 +194,7 @@ export async function spawnHttpServer(
         // @ts-ignore
         (rl as { close: () => void }).close();
         reject(
-          new Error(
-            `Failed to spawn bin.js: ${err.message}\nstderr collected:\n${stderrBuffer}`,
-          ),
+          new Error(`Failed to spawn bin.js: ${err.message}\nstderr collected:\n${stderrBuffer}`),
         );
       },
     );

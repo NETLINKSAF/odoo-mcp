@@ -38,11 +38,11 @@ export async function waitForOdoo(
     if (nowMs - lastProgressMs >= PROGRESS_INTERVAL_MS) {
       lastProgressMs = nowMs;
       process.stderr.write(
-        JSON.stringify({
+        `${JSON.stringify({
           event: 'waiting_for_odoo',
           elapsed_ms: nowMs - startMs,
           baseUrl,
-        }) + '\n',
+        })}\n`,
       );
     }
 

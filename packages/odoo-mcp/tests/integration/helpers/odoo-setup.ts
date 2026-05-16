@@ -65,7 +65,7 @@ async function odooJsonRpc(
 ): Promise<unknown> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (sessionId) {
-    headers['Cookie'] = `session_id=${sessionId}`;
+    headers.Cookie = `session_id=${sessionId}`;
   }
 
   const response = await fetch(url, {
@@ -164,7 +164,7 @@ export async function provisionTestOdoo(baseUrl: string): Promise<TestCredential
       // 200 OK or 3xx redirect both indicate the DB was created (or already exists).
       if (response.status < 500) {
         process.stderr.write(
-          JSON.stringify({ event: 'db_created', db: TEST_DB, status: response.status }) + '\n',
+          `${JSON.stringify({ event: 'db_created', db: TEST_DB, status: response.status })}\n`,
         );
         break;
       }
@@ -180,11 +180,11 @@ export async function provisionTestOdoo(baseUrl: string): Promise<TestCredential
         );
       }
       process.stderr.write(
-        JSON.stringify({
+        `${JSON.stringify({
           event: 'db_create_retry',
           attempt: createAttempt,
           error: err instanceof Error ? err.message : String(err),
-        }) + '\n',
+        })}\n`,
       );
       await sleep(RETRY_BACKOFF_MS);
     }
@@ -242,10 +242,10 @@ export async function provisionTestOdoo(baseUrl: string): Promise<TestCredential
       name.includes('NotImplemented');
     if (isMethodNotFound) {
       process.stderr.write(
-        JSON.stringify({
+        `${JSON.stringify({
           event: 'api_key_fallback',
           reason: 'api_key_create not available',
-        }) + '\n',
+        })}\n`,
       );
       apiKey = MCP_USER_PASSWORD;
     } else {
