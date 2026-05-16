@@ -12,7 +12,8 @@
     "lint": "pnpm biome check .",
     "format": "pnpm biome check --write .",
     "typecheck": "pnpm -r exec tsc --noEmit",
-    "test:integration": "pnpm --filter @netlinksinc/odoo-mcp test:integration"
+    "test:integration": "pnpm --filter @netlinksinc/odoo-mcp test:integration",
+    "audit": "pnpm audit --prod && pnpm -r exec pnpm audit --prod"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9",

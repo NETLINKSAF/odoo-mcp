@@ -69,6 +69,8 @@ Claude should call `odoo_search_read` on `res.partner` and return rows.
 | Tool calls hang then time out (30s) | Network path to Odoo is slow or being blocked. Check firewall / VPN |
 | Need to see Odoo's Python traceback | Add `-e ODOO_MCP_DEBUG=1` to step 2 and re-add |
 
+Run `pnpm audit` from the repo root to check for known vulnerabilities in production dependencies.
+
 ---
 
 ## Environment variables

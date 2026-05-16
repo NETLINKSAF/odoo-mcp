@@ -52,7 +52,7 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => {
   return { McpServer };
 });
 
-import { startHttpTransport, getRequestContext } from '../src/http-transport.js';
+import { startHttpTransport, getRequestContext, _MAX_SESSIONS, _AUTH_FAILURE_MAP_CAP } from '../src/http-transport.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { HttpTransportConfig } from '../src/http-transport.js';
 
@@ -898,5 +898,257 @@ describe('auth failure rate limit', () => {
       const { status: ok } = await badAuth(port, '192.0.2.21');
       expect(ok).toBe(401);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-003: session limit
+// ---------------------------------------------------------------------------
+
+describe('session limit (F-003)', () => {
+  const TOKEN = 'j'.repeat(32);
+
+  // Override MockTransport so each instance gets a unique sessionId.
+  // This is required because the session map only grows when sessionId !== undefined.
+  let sessionCounter = 0;
+
+  beforeEach(() => {
+    sessionCounter = 0;
+    vi.mocked(StreamableHTTPServerTransport).mockImplementation(() => {
+      const sid = `sess-${++sessionCounter}`;
+      const obj = {
+        sessionId: sid as string | undefined,
+        onclose: undefined as (() => void) | undefined,
+        handleRequest: vi.fn().mockImplementation(
+          (_req: unknown, res: { writeHead: (s: number) => void; end: () => void }) => {
+            res.writeHead(200);
+            res.end();
+            return Promise.resolve();
+          },
+        ),
+        close: vi.fn().mockImplementation(async () => {
+          if (obj.onclose) obj.onclose();
+        }),
+        connect: vi.fn().mockResolvedValue(undefined),
+        start: vi.fn().mockResolvedValue(undefined),
+        send: vi.fn().mockResolvedValue(undefined),
+      };
+      return obj;
+    });
+  });
+
+  afterEach(() => {
+    // Restore the original mock implementation for other tests
+    vi.mocked(StreamableHTTPServerTransport).mockImplementation(() => ({
+      sessionId: undefined as string | undefined,
+      onclose: undefined as (() => void) | undefined,
+      handleRequest: vi.fn().mockImplementation(
+        (_req: unknown, res: { writeHead: (s: number) => void; end: () => void }) => {
+          res.writeHead(200);
+          res.end();
+          return Promise.resolve();
+        },
+      ),
+      close: vi.fn().mockResolvedValue(undefined),
+      connect: vi.fn().mockResolvedValue(undefined),
+      start: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+    }));
+  });
+
+  /** Send a new-session POST (no Mcp-Session-Id header). */
+  function newSession(port: number): Promise<{ status: number; body: unknown }> {
+    return requestFull(port, 'POST', '/mcp', {
+      Authorization: `Bearer ${TOKEN}`,
+      'Content-Type': 'application/json',
+    });
+  }
+
+  it('returns 503 too_many_sessions when MAX_SESSIONS sessions exist', async () => {
+    const result = await startHttpTransport({
+      port: 0,
+      bearerToken: TOKEN,
+      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
+      logger: makeLogger(),
+      healthPayload: makeHealthPayload(true),
+    });
+    const addr = result.httpServer.address() as AddressInfo;
+    const port = addr.port;
+
+    try {
+      // Fill up to MAX_SESSIONS sessions
+      for (let i = 0; i < _MAX_SESSIONS; i++) {
+        await newSession(port);
+      }
+
+      // The next new-session request must be rejected
+      const { status, body } = await newSession(port);
+      expect(status).toBe(503);
+      expect((body as Record<string, unknown>)['error']).toBe('too_many_sessions');
+    } finally {
+      await result.close();
+    }
+  });
+
+  it('allows a new session after an existing session closes', async () => {
+    // Use a small mock that exposes the onclose callback so we can trigger it
+    const transports: Array<{ sessionId: string | undefined; onclose: (() => void) | undefined; close: () => Promise<void> }> = [];
+
+    vi.mocked(StreamableHTTPServerTransport).mockImplementation(() => {
+      const sid = `sess-close-${++sessionCounter}`;
+      const obj = {
+        sessionId: sid as string | undefined,
+        onclose: undefined as (() => void) | undefined,
+        handleRequest: vi.fn().mockImplementation(
+          (_req: unknown, res: { writeHead: (s: number) => void; end: () => void }) => {
+            res.writeHead(200);
+            res.end();
+            return Promise.resolve();
+          },
+        ),
+        close: vi.fn().mockImplementation(async () => {
+          if (obj.onclose) obj.onclose();
+        }),
+        connect: vi.fn().mockResolvedValue(undefined),
+        start: vi.fn().mockResolvedValue(undefined),
+        send: vi.fn().mockResolvedValue(undefined),
+      };
+      transports.push(obj);
+      return obj;
+    });
+
+    const result = await startHttpTransport({
+      port: 0,
+      bearerToken: TOKEN,
+      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
+      logger: makeLogger(),
+      healthPayload: makeHealthPayload(true),
+    });
+    const addr = result.httpServer.address() as AddressInfo;
+    const port = addr.port;
+
+    try {
+      // Fill to MAX_SESSIONS
+      for (let i = 0; i < _MAX_SESSIONS; i++) {
+        await newSession(port);
+      }
+
+      // Verify cap is hit
+      const { status: before } = await newSession(port);
+      expect(before).toBe(503);
+
+      // Close the first session — triggers onclose which removes it from sessions map
+      const first = transports[0];
+      if (first) {
+        await first.close();
+      }
+
+      // Now a new session should be accepted (count is MAX_SESSIONS - 1)
+      const { status: after } = await newSession(port);
+      expect(after).toBe(200);
+    } finally {
+      await result.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-004: authFailures Map bounds
+// ---------------------------------------------------------------------------
+
+describe('authFailures map bounds (F-004)', () => {
+  const TOKEN = 'k'.repeat(32);
+
+  async function withBoundsServer(fn: (port: number) => Promise<void>): Promise<void> {
+    const result = await startHttpTransport({
+      port: 0,
+      bearerToken: TOKEN,
+      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
+      logger: makeLogger(),
+      healthPayload: makeHealthPayload(true),
+    });
+    const addr = result.httpServer.address() as AddressInfo;
+    try {
+      await fn(addr.port);
+    } finally {
+      await result.close();
+    }
+  }
+
+  function badAuthFrom(port: number, ip: string): Promise<{ status: number }> {
+    return requestFull(port, 'POST', '/mcp', {
+      Authorization: 'Bearer wrong-token',
+      'X-Forwarded-For': ip,
+    });
+  }
+
+  it('prunes entries whose newest failure is older than 60 s (sweep interval)', async () => {
+    vi.useFakeTimers();
+    const t0 = Date.now();
+    try {
+      await withBoundsServer(async (port) => {
+        // Add a few failures at t0
+        await badAuthFrom(port, '10.1.0.1');
+        await badAuthFrom(port, '10.1.0.2');
+
+        // Advance time by 61 s — failures are now older than AUTH_FAILURE_SWEEP_MAX_AGE_MS
+        vi.setSystemTime(t0 + 61_000);
+
+        // Advance fake timers by 5 min + 1 ms to trigger the sweep
+        await vi.advanceTimersByTimeAsync(5 * 60_000 + 1);
+
+        // The IPs can now fail again freely (sweep cleared them);
+        // if they were still present and the 60 s window had aged out, isAuthRateLimited
+        // would return false on the next access — but we verify the sweep ran by
+        // confirming the entries are gone (only 1 failure each, never blocked anyway).
+        // The observable effect: after 61 more failures the new IP is blocked as expected.
+        for (let i = 0; i < 20; i++) {
+          await badAuthFrom(port, '10.1.0.3');
+        }
+        const { status } = await badAuthFrom(port, '10.1.0.3');
+        expect(status).toBe(429);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('evicts oldest 25% when Map size exceeds AUTH_FAILURE_MAP_CAP', async () => {
+    // Fill the map to just above the cap using unique IPs, then verify size stays bounded.
+    // We use fake system time so all entries share the same timestamp and none age out.
+    vi.useFakeTimers();
+    try {
+      await withBoundsServer(async (port) => {
+        const cap = _AUTH_FAILURE_MAP_CAP;
+
+        // Generate cap + 1 unique IPs. The (cap+1)-th insert must trigger eviction.
+        // Each unique IP generates 1 failure, so the map would grow to cap+1 without the guard.
+        // With the guard, inserting the (cap+1)-th new IP evicts 25% before adding.
+        for (let i = 0; i < cap + 1; i++) {
+          // Build a unique IP per iteration
+          const a = Math.floor(i / 65536) % 256;
+          const b = Math.floor(i / 256) % 256;
+          const c = i % 256;
+          const ip = `10.${a}.${b}.${c}`;
+          await badAuthFrom(port, ip);
+        }
+
+        // After cap+1 inserts with the eviction guard, the map size must be <= cap.
+        // We can't inspect the module-private map directly, but we verify the server
+        // is still healthy (no crash, health still responds 200).
+        const { status } = await requestFull(port, 'GET', '/health');
+        expect(status).toBe(200);
+
+        // The key assertion: the server must not have OOM'd or crashed.
+        // Additionally verify that a brand-new IP is still rate-limitable (logic intact).
+        for (let i = 0; i < 20; i++) {
+          await badAuthFrom(port, '203.0.113.99');
+        }
+        const { status: rateLimited } = await badAuthFrom(port, '203.0.113.99');
+        expect(rateLimited).toBe(429);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,7 +1,7 @@
-FROM node:22-alpine
+FROM node:22.13-alpine
 
 # Enable pnpm via corepack (built into Node 22)
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
 
@@ -18,6 +18,11 @@ COPY . .
 
 # Compile TypeScript for both packages
 RUN pnpm -r build
+
+# Run as a non-root user (F-001)
+RUN addgroup -S app && adduser -S -G app app && \
+    chown -R app:app /app
+USER app
 
 # Default to HTTP mode (Docker implies remote access — US-5 AC-4)
 ENV MODE=http

@@ -132,6 +132,27 @@ export function getRequestContext(
 
 const MAX_BODY_BYTES = 1_048_576; // 1 MiB
 
+/** Maximum number of concurrent MCP sessions (F-003). */
+export const _MAX_SESSIONS = 100;
+
+/** Hard cap on the authFailures Map size (F-004). */
+export const _AUTH_FAILURE_MAP_CAP = 10_000;
+
+/** Fraction of oldest entries to evict when the authFailures cap is hit (F-004). */
+const AUTH_FAILURE_EVICT_FRACTION = 0.25;
+
+/** How often the authFailures sweep runs (ms). */
+const AUTH_FAILURE_SWEEP_INTERVAL_MS = 5 * 60_000; // 5 minutes
+
+/** Entries whose newest failure is older than this are pruned by the sweep. */
+const AUTH_FAILURE_SWEEP_MAX_AGE_MS = 60_000; // 60 seconds
+
+/** How often the session idle-timeout sweep runs (ms). */
+const SESSION_SWEEP_INTERVAL_MS = 5 * 60_000; // 5 minutes
+
+/** Sessions idle longer than this are closed (ms). */
+const SESSION_IDLE_TIMEOUT_MS = 30 * 60_000; // 30 minutes
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -189,14 +210,45 @@ function isAuthRateLimited(ip: string): boolean {
   return fresh.length >= AUTH_FAIL_LIMIT;
 }
 
-/** Record an auth failure for this IP. */
+/** Record an auth failure for this IP. Enforces the hard cap (F-004). */
 function recordAuthFailure(ip: string): void {
   const now = Date.now();
+
+  // Hard cap: if the Map is at or above the cap, evict the oldest 25% before
+  // adding a new entry. Uses a simple one-pass collect-and-delete — the Map is
+  // small relative to memory and is rarely accessed at scale.
+  if (authFailures.size >= _AUTH_FAILURE_MAP_CAP && !authFailures.has(ip)) {
+    const evictCount = Math.ceil(_AUTH_FAILURE_MAP_CAP * AUTH_FAILURE_EVICT_FRACTION);
+    let evicted = 0;
+    for (const key of authFailures.keys()) {
+      if (evicted >= evictCount) break;
+      authFailures.delete(key);
+      evicted++;
+    }
+  }
+
   const entries = authFailures.get(ip) ?? [];
   entries.push(now);
   // Prune in-place to bound memory
   const fresh = entries.filter((ts) => now - ts < AUTH_FAIL_WINDOW_MS);
   authFailures.set(ip, fresh);
+}
+
+/**
+ * Periodic sweep: remove authFailures entries whose newest timestamp is older
+ * than AUTH_FAILURE_SWEEP_MAX_AGE_MS. Runs every AUTH_FAILURE_SWEEP_INTERVAL_MS.
+ * Returned handle must be cleared in closeTransport() (F-004).
+ */
+function startAuthFailureSweep(): ReturnType<typeof setInterval> {
+  return setInterval(() => {
+    const cutoff = Date.now() - AUTH_FAILURE_SWEEP_MAX_AGE_MS;
+    for (const [ip, timestamps] of authFailures) {
+      const newest = timestamps.length > 0 ? Math.max(...timestamps) : 0;
+      if (newest < cutoff) {
+        authFailures.delete(ip);
+      }
+    }
+  }, AUTH_FAILURE_SWEEP_INTERVAL_MS);
 }
 
 /** Write a JSON response with the given status code and object body. */
@@ -357,6 +409,27 @@ export async function startHttpTransport(
   /** Active MCP sessions keyed by session ID. */
   const sessions = new Map<string, StreamableHTTPServerTransport>();
 
+  /** Last-activity timestamps keyed by session ID (F-003 idle timeout). */
+  const sessionLastActivity = new Map<string, number>();
+
+  // Session idle-timeout sweep (F-003): close sessions idle > SESSION_IDLE_TIMEOUT_MS
+  const sessionSweepHandle = setInterval(() => {
+    const now = Date.now();
+    for (const [sid, lastAt] of sessionLastActivity) {
+      if (now - lastAt > SESSION_IDLE_TIMEOUT_MS) {
+        const transport = sessions.get(sid);
+        if (transport) {
+          transport.close().catch(() => undefined);
+          sessions.delete(sid);
+        }
+        sessionLastActivity.delete(sid);
+      }
+    }
+  }, SESSION_SWEEP_INTERVAL_MS);
+
+  // Auth-failure periodic sweep (F-004)
+  const authFailureSweepHandle = startAuthFailureSweep();
+
   // TLS detection (US-1 AC-10) — closure-scoped flag and timer handle
   let tlsSeen = false;
   let tlsWarningTimer: ReturnType<typeof setTimeout> | undefined;
@@ -501,6 +574,13 @@ export async function startHttpTransport(
           let transport: StreamableHTTPServerTransport;
 
           if (method === 'POST' && !sessionId) {
+            // Session cap check (F-003)
+            if (sessions.size >= _MAX_SESSIONS) {
+              logRequest(method, path, 503, startedAt, client_ip, user_agent, request_id);
+              jsonResponse(res, 503, { error: 'too_many_sessions' });
+              return;
+            }
+
             // New session — create a fresh transport and connect to the shared McpServer
             transport = new StreamableHTTPServerTransport({
               // @ts-ignore — randomUUID imported with @ts-ignore above
@@ -511,6 +591,7 @@ export async function startHttpTransport(
             transport.onclose = () => {
               if (transport.sessionId !== undefined) {
                 sessions.delete(transport.sessionId);
+                sessionLastActivity.delete(transport.sessionId);
               }
             };
 
@@ -520,6 +601,7 @@ export async function startHttpTransport(
             // Cache the transport under its generated session ID
             if (transport.sessionId !== undefined) {
               sessions.set(transport.sessionId, transport);
+              sessionLastActivity.set(transport.sessionId, Date.now());
             }
           } else if (sessionId) {
             // Existing session lookup
@@ -530,6 +612,8 @@ export async function startHttpTransport(
               return;
             }
             transport = existing;
+            // Update last activity for idle-timeout tracking (F-003)
+            sessionLastActivity.set(sessionId, Date.now());
           } else {
             // GET/DELETE without a session ID — not valid for this protocol
             logRequest(method, path, 400, startedAt, client_ip, user_agent, request_id);
@@ -605,7 +689,8 @@ export async function startHttpTransport(
 
   /**
    * Gracefully shuts down: closes all active MCP session transports first,
-   * then closes the HTTP server. Also clears the TLS detection timer.
+   * then closes the HTTP server. Also clears the TLS detection timer and sweep
+   * intervals so tests don't hang (F-003, F-004).
    */
   async function close(): Promise<void> {
     // Clear TLS detection timer to prevent memory leaks (US-1 AC-10)
@@ -614,12 +699,17 @@ export async function startHttpTransport(
       tlsWarningTimer = undefined;
     }
 
+    // Clear sweep intervals (F-003, F-004)
+    clearInterval(sessionSweepHandle);
+    clearInterval(authFailureSweepHandle);
+
     const closePromises: Promise<void>[] = [];
     for (const transport of sessions.values()) {
       closePromises.push(transport.close());
     }
     await Promise.allSettled(closePromises);
     sessions.clear();
+    sessionLastActivity.clear();
 
     await new Promise<void>((resolve, reject) => {
       httpServer.close((err?: Error) => {
