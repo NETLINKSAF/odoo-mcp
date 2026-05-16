@@ -1,3 +1,5 @@
+// @ts-ignore — @types/node not installed; AsyncLocalStorage available in Node 12+
+import { AsyncLocalStorage } from 'node:async_hooks';
 // @ts-ignore
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 // @ts-ignore — @types/node not installed; resolves correctly at Node.js runtime
@@ -41,12 +43,17 @@ interface NodeIncomingMessage {
   url?: string;
   headers: Record<string, string | string[] | undefined>;
   socket: NodeSocket;
+  // Body streaming — subset of Node.js IncomingMessage EventEmitter API
+  on(event: 'data', handler: (chunk: BufferLike) => void): void;
+  on(event: 'end', handler: () => void): void;
+  on(event: 'error', handler: (err: Error) => void): void;
 }
 
 interface NodeServerResponse {
   headersSent: boolean;
   writeHead(statusCode: number, headers?: Record<string, string | number>): void;
   end(body?: string): void;
+  setHeader(name: string, value: string): void;
 }
 
 interface NodeHttpServer {
@@ -77,27 +84,53 @@ export interface HttpTransportConfig {
 interface RequestContext {
   client_ip: string;
   user_agent: string;
+  request_id: string;
 }
 
 // ---------------------------------------------------------------------------
-// Module-level WeakMap for per-transport context (T-17 consumption hook)
+// AsyncLocalStorage for per-request context (T-17)
+//
+// Tool handlers can import and read from this store to access request_id,
+// client_ip, and user_agent without requiring the transport WeakMap.
+// Usage in a tool handler:
+//   const ctx = requestContextStorage.getStore();
+//   if (ctx) { const { request_id, client_ip, user_agent } = ctx; }
+// ---------------------------------------------------------------------------
+
+// @ts-ignore — AsyncLocalStorage imported above; TS generic not available without @types/node
+export const requestContextStorage: {
+  getStore(): RequestContext | undefined;
+  run(store: RequestContext, fn: () => Promise<void>): Promise<void>;
+} =
+  // @ts-ignore
+  new AsyncLocalStorage();
+
+// ---------------------------------------------------------------------------
+// Module-level WeakMap for per-transport context
 // ---------------------------------------------------------------------------
 
 /**
- * WeakMap keyed by transport instance. Allows tool handlers (in a later wave,
- * T-17) to retrieve per-request IP / UA without importing node:async_hooks.
+ * WeakMap keyed by transport instance. Allows tool handlers to retrieve
+ * per-request IP / UA / request_id without importing node:async_hooks.
+ * Updated by T-17 to include request_id.
  */
 const requestContextMap = new WeakMap<StreamableHTTPServerTransport, RequestContext>();
 
 /**
- * Returns the `{ client_ip, user_agent }` attached to a transport instance,
- * or `undefined` if not yet set (e.g. for stdio mode).
+ * Returns the `{ client_ip, user_agent, request_id }` attached to a transport
+ * instance, or `undefined` if not yet set (e.g. for stdio mode).
  */
 export function getRequestContext(
   transport: StreamableHTTPServerTransport,
 ): RequestContext | undefined {
   return requestContextMap.get(transport);
 }
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const MAX_BODY_BYTES = 1_048_576; // 1 MiB
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -139,24 +172,47 @@ function jsonResponse(res: NodeServerResponse, status: number, body: unknown): v
   res.end(payload);
 }
 
-/** Extract the client IP from request headers / socket. */
+/**
+ * Set HSTS header when the request arrived over HTTPS
+ * (detected via the X-Forwarded-Proto header set by the TLS terminator).
+ * US-1 AC-9.
+ */
+function applyHsts(req: NodeIncomingMessage, res: NodeServerResponse): void {
+  if (req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+}
+
+/**
+ * Extract and validate the client IP from request headers / socket.
+ * XFF char validation (US-4 AC-8): if the first XFF value contains characters
+ * outside the safe set, returns 'invalid' instead of the raw value.
+ */
 function extractClientIp(req: NodeIncomingMessage): string {
-  const xff = req.headers['x-forwarded-for'];
-  if (xff) {
-    const first = (Array.isArray(xff) ? xff[0] : xff).split(',')[0];
-    if (first) return first.trim();
+  const rawXFF = req.headers['x-forwarded-for'];
+  const rawIP =
+    typeof rawXFF === 'string'
+      ? rawXFF.split(',')[0]?.trim()
+      : Array.isArray(rawXFF)
+        ? rawXFF[0]?.split(',')[0]?.trim()
+        : undefined;
+
+  const XFF_SAFE = /^[0-9a-fA-F.:, ]+$/;
+  if (rawIP !== undefined) {
+    return XFF_SAFE.test(rawIP) ? rawIP : 'invalid';
   }
   return req.socket.remoteAddress ?? 'unknown';
 }
 
 /** Returns `true` when the address is a loopback address. */
 function isLoopbackAddress(addr: string | undefined): boolean {
-  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+  const loopback = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+  return loopback.has(addr ?? '');
 }
 
 /**
- * Emits a structured `http_request` log line (option C from the spec).
- * Tool-call-level IP/UA wiring is deferred to T-17 via AsyncLocalStorage.
+ * Emits a structured `http_request` log line.
+ * Includes request_id for correlation (US-4 AC-7).
  */
 function logRequest(
   method: string,
@@ -165,6 +221,7 @@ function logRequest(
   startedAt: number,
   client_ip: string,
   user_agent: string,
+  request_id?: string,
 ): void {
   process.stderr.write(
     `${JSON.stringify({
@@ -176,8 +233,49 @@ function logRequest(
       client_ip,
       user_agent,
       latency_ms: Date.now() - startedAt,
+      ...(request_id !== undefined ? { request_id } : {}),
     })}\n`,
   );
+}
+
+/**
+ * Read and buffer the full request body, enforcing the 1 MiB size limit.
+ * Returns the raw body buffer or throws { status: 413 } when the limit
+ * is exceeded via Content-Length or streaming.
+ *
+ * US-1 AC-8.
+ */
+function readBody(req: NodeIncomingMessage): Promise<BufferLike> {
+  return new Promise<BufferLike>((resolve, reject) => {
+    // Fast path: trust Content-Length if provided
+    const clHeader = req.headers['content-length'];
+    const cl = typeof clHeader === 'string' ? Number.parseInt(clHeader, 10) : Number.NaN;
+    if (!Number.isNaN(cl) && cl > MAX_BODY_BYTES) {
+      reject({ status: 413 });
+      return;
+    }
+
+    const chunks: BufferLike[] = [];
+    let totalBytes = 0;
+
+    req.on('data', (chunk: BufferLike) => {
+      totalBytes += chunk.length;
+      if (totalBytes > MAX_BODY_BYTES) {
+        reject({ status: 413 });
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on('end', () => {
+      // @ts-ignore — Buffer.concat is a Node.js global
+      resolve(Buffer.concat(chunks));
+    });
+
+    req.on('error', (err: Error) => {
+      reject(err);
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -191,14 +289,39 @@ function logRequest(
  * - Rejects all other paths with 404
  * - Requires a valid `Authorization: Bearer <token>` header on all non-health routes
  *
+ * Security hardening (T-17):
+ * - HSTS header on all responses when X-Forwarded-Proto: https (US-1 AC-9)
+ * - TLS detection startup warning if no https traffic within 60s (US-1 AC-10)
+ * - 1 MiB body limit with 413 (US-1 AC-8)
+ * - Bearer token length warning at startup (US-2 AC-8)
+ * - Loopback-only odoo_url/odoo_db in /health (US-3 AC-7)
+ * - request_id UUIDv4 per /mcp request via WeakMap + ALS (US-4 AC-7)
+ * - XFF character validation (US-4 AC-8)
+ *
  * Returns the bound `HttpServer` and an async `close()` that tears everything
  * down cleanly.
  */
 export async function startHttpTransport(
   config: HttpTransportConfig,
 ): Promise<{ httpServer: HttpServer; close: () => Promise<void> }> {
+  // -------------------------------------------------------------------------
+  // Bearer token length warning (US-2 AC-8)
+  // -------------------------------------------------------------------------
+  if (config.bearerToken.length < 32) {
+    process.stderr.write(
+      `${JSON.stringify({
+        event: 'warning',
+        message: 'MCP_BEARER_TOKEN is fewer than 32 characters — use `openssl rand -hex 32`',
+      })}\n`,
+    );
+  }
+
   /** Active MCP sessions keyed by session ID. */
   const sessions = new Map<string, StreamableHTTPServerTransport>();
+
+  // TLS detection (US-1 AC-10) — closure-scoped flag and timer handle
+  let tlsSeen = false;
+  let tlsWarningTimer: ReturnType<typeof setTimeout> | undefined;
 
   // @ts-ignore — createServer imported with @ts-ignore above
   const httpServer: NodeHttpServer = createServer(
@@ -210,6 +333,18 @@ export async function startHttpTransport(
       const path = url.split('?')[0] ?? '/';
 
       const remoteAddr = req.socket.remoteAddress;
+
+      // ------------------------------------------------------------------
+      // HSTS header (US-1 AC-9): apply to every response
+      // ------------------------------------------------------------------
+      applyHsts(req, res);
+
+      // ------------------------------------------------------------------
+      // TLS detection flag (US-1 AC-10)
+      // ------------------------------------------------------------------
+      if (req.headers['x-forwarded-proto'] === 'https') {
+        tlsSeen = true;
+      }
 
       try {
         // ----------------------------------------------------------------
@@ -235,10 +370,10 @@ export async function startHttpTransport(
 
           let body: unknown;
           if (isLoopbackAddress(remoteAddr)) {
-            // Full payload for loopback callers
+            // Full payload for loopback callers (US-3 AC-7)
             body = { ok, mode, odoo_url, odoo_db, started_at, probe_ok };
           } else {
-            // Redacted payload for remote callers
+            // Redacted payload for remote callers — no odoo_url or odoo_db
             body = { ok, mode, probe_ok };
           }
 
@@ -278,8 +413,33 @@ export async function startHttpTransport(
         if (path === '/mcp') {
           const client_ip = extractClientIp(req);
           const user_agent = String(req.headers['user-agent'] ?? '');
+
+          // Generate a fresh UUIDv4 request_id for every /mcp request (US-4 AC-7)
+          // @ts-ignore — randomUUID imported with @ts-ignore above
+          const request_id: string = randomUUID() as string;
+
           const sessionIdHeader = req.headers['mcp-session-id'];
           const sessionId = Array.isArray(sessionIdHeader) ? sessionIdHeader[0] : sessionIdHeader;
+
+          // ------------------------------------------------------------------
+          // 1 MiB body limit (US-1 AC-8) — read and buffer before routing
+          // ------------------------------------------------------------------
+          let body: BufferLike;
+          try {
+            body = await readBody(req);
+          } catch (bodyErr) {
+            if (
+              bodyErr !== null &&
+              typeof bodyErr === 'object' &&
+              'status' in bodyErr &&
+              (bodyErr as { status: number }).status === 413
+            ) {
+              logRequest(method, path, 413, startedAt, client_ip, user_agent, request_id);
+              jsonResponse(res, 413, { error: 'payload_too_large' });
+              return;
+            }
+            throw bodyErr;
+          }
 
           let transport: StreamableHTTPServerTransport;
 
@@ -308,24 +468,29 @@ export async function startHttpTransport(
             // Existing session lookup
             const existing = sessions.get(sessionId);
             if (!existing) {
-              logRequest(method, path, 404, startedAt, client_ip, user_agent);
+              logRequest(method, path, 404, startedAt, client_ip, user_agent, request_id);
               jsonResponse(res, 404, { error: 'session_not_found' });
               return;
             }
             transport = existing;
           } else {
             // GET/DELETE without a session ID — not valid for this protocol
-            logRequest(method, path, 400, startedAt, client_ip, user_agent);
+            logRequest(method, path, 400, startedAt, client_ip, user_agent, request_id);
             jsonResponse(res, 400, { error: 'session_id_required' });
             return;
           }
 
-          // Attach per-request context for downstream consumption (T-17)
-          requestContextMap.set(transport, { client_ip, user_agent });
+          // Attach per-request context for downstream consumption via WeakMap
+          const ctx: RequestContext = { client_ip, user_agent, request_id };
+          requestContextMap.set(transport, ctx);
 
-          logRequest(method, path, 200, startedAt, client_ip, user_agent);
-          // @ts-ignore — req/res are node:http objects at runtime; SDK accepts them
-          await transport.handleRequest(req, res);
+          logRequest(method, path, 200, startedAt, client_ip, user_agent, request_id);
+
+          // Run handleRequest inside the ALS store so tool handlers can access context
+          await requestContextStorage.run(ctx, async () => {
+            // @ts-ignore — req/res are node:http objects at runtime; SDK accepts them
+            await transport.handleRequest(req, res, body);
+          });
           return;
         }
 
@@ -363,11 +528,35 @@ export async function startHttpTransport(
     });
   });
 
+  // -------------------------------------------------------------------------
+  // TLS detection startup warning (US-1 AC-10)
+  // Start a 60s one-shot timer after listen resolves. If no https traffic
+  // is seen within 60s, warn to stderr that TLS termination may be missing.
+  // -------------------------------------------------------------------------
+  tlsWarningTimer = setTimeout(() => {
+    tlsWarningTimer = undefined;
+    if (!tlsSeen) {
+      process.stderr.write(
+        `${JSON.stringify({
+          event: 'warning',
+          message:
+            'No X-Forwarded-Proto: https detected within 60s — TLS termination may not be configured',
+        })}\n`,
+      );
+    }
+  }, 60_000);
+
   /**
    * Gracefully shuts down: closes all active MCP session transports first,
-   * then closes the HTTP server.
+   * then closes the HTTP server. Also clears the TLS detection timer.
    */
   async function close(): Promise<void> {
+    // Clear TLS detection timer to prevent memory leaks (US-1 AC-10)
+    if (tlsWarningTimer !== undefined) {
+      clearTimeout(tlsWarningTimer);
+      tlsWarningTimer = undefined;
+    }
+
     const closePromises: Promise<void>[] = [];
     for (const transport of sessions.values()) {
       closePromises.push(transport.close());
