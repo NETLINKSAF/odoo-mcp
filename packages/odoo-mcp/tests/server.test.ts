@@ -148,8 +148,8 @@ describe('createOdooMcpServer', () => {
     expect(registerAllTools).toHaveBeenCalledWith(server, clientInstance, fakeSession, logger);
   });
 
-  // Test 6 — Server is constructed with name='odoo-mcp' and version='0.1.0'
-  it('constructs McpServer with name odoo-mcp and version 0.1.0', async () => {
+  // Test 6 — Server is constructed with name='odoo-mcp' and version='0.2.0'
+  it('constructs McpServer with name odoo-mcp and version 0.2.0', async () => {
     const constructorSpy = vi.spyOn(
       { McpServer },
       'McpServer',
@@ -192,5 +192,39 @@ describe('createOdooMcpServer', () => {
 
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toBe('auth failed');
+  });
+
+  // Test 9 — probeOk is true when all probe fields are success values
+  it('returns probeOk true when all probe fields succeed', async () => {
+    vi.mocked(runProbe).mockResolvedValue({
+      modules: [{ name: 'base', version: '16.0' }],
+      reports: [],
+      serverActions: [],
+      companies: [{ id: 1, name: 'Acme', currency_id: [1, 'USD'] }],
+      currencies: [{ id: 1, name: 'USD', symbol: '$' }],
+      fiscalYear: { date_from: '2026-01-01', date_to: '2026-12-31' },
+      language: 'en_US',
+      locale: 'UTC',
+    });
+
+    const result = await createOdooMcpServer({ odooConfig: ODOO_CONFIG });
+    expect(result).toHaveProperty('probeOk', true);
+  });
+
+  // Test 10 — probeOk is false when any probe field is an error object
+  it('returns probeOk false when at least one probe field has an error', async () => {
+    vi.mocked(runProbe).mockResolvedValue({
+      modules: { error: 'connection refused' },
+      reports: [],
+      serverActions: [],
+      companies: [],
+      currencies: [],
+      fiscalYear: { date_from: '2026-01-01', date_to: '2026-12-31' },
+      language: 'en_US',
+      locale: 'UTC',
+    });
+
+    const result = await createOdooMcpServer({ odooConfig: ODOO_CONFIG });
+    expect(result).toHaveProperty('probeOk', false);
   });
 });

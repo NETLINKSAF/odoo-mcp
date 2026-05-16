@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { OdooClient, type OdooConfig } from '@netlinksinc/odoo-client';
+import { OdooClient, type OdooConfig, type ProbeResult } from '@netlinksinc/odoo-client';
 
 import { type Logger, createLogger } from './logger.js';
 import { runProbe } from './probe.js';
@@ -12,6 +12,24 @@ export interface McpServerConfig {
 }
 
 /**
+ * Returns true if every field in the ProbeResult is a success value (not an
+ * error object). Used by bin.ts to populate HealthPayload.probe_ok.
+ */
+function computeProbeOk(probe: ProbeResult): boolean {
+  const fields: unknown[] = [
+    probe.modules,
+    probe.reports,
+    probe.serverActions,
+    probe.companies,
+    probe.currencies,
+    probe.fiscalYear,
+    probe.language,
+    probe.locale,
+  ];
+  return fields.every((f) => !(typeof f === 'object' && f !== null && 'error' in f));
+}
+
+/**
  * Wires all subsystems together and returns the ready-to-connect MCP server
  * along with the logger instance (so bin.ts can call logger.startup and
  * logger.shutdown without opening a second file descriptor on the log file).
@@ -21,7 +39,7 @@ export interface McpServerConfig {
  */
 export async function createOdooMcpServer(
   config: McpServerConfig,
-): Promise<{ server: McpServer; logger: Logger }> {
+): Promise<{ server: McpServer; logger: Logger; probeOk: boolean }> {
   // 1. Build the Odoo client.
   const client = new OdooClient(config.odooConfig);
 
@@ -34,14 +52,17 @@ export async function createOdooMcpServer(
   // 4. Run the startup probe (never throws — always resolves).
   const probe = await runProbe(client);
 
-  // 5. Create the MCP server.
-  const server = new McpServer({ name: 'odoo-mcp', version: '0.1.0' });
+  // 5. Compute whether the probe completed without any field errors.
+  const probeOk = computeProbeOk(probe);
 
-  // 6. Register resources (static, backed by probe snapshot).
+  // 6. Create the MCP server.
+  const server = new McpServer({ name: 'odoo-mcp', version: '0.2.0' });
+
+  // 7. Register resources (static, backed by probe snapshot).
   registerResources(server, probe);
 
-  // 7. Register all tool handlers.
+  // 8. Register all tool handlers.
   registerAllTools(server, client, session, logger);
 
-  return { server, logger };
+  return { server, logger, probeOk };
 }
