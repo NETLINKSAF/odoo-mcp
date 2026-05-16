@@ -13,109 +13,78 @@ export function registerReportTool(
   session: OdooSession,
   logger: Logger,
 ): void {
-  server.tool('odoo_run_report', async (args) => {
-    const t0 = Date.now();
-    const toolName = 'odoo_run_report';
-
-    const parsed = runReportSchema.safeParse(args);
-    if (!parsed.success) {
-      const errorPayload = {
-        error_type: 'InputValidationError',
-        message: parsed.error.message,
-      };
-      logger.toolCall({
-        tool: toolName,
-        args_sanitized: sanitizeArgs(toolName, args as Record<string, unknown>),
-        latency_ms: Date.now() - t0,
-        status: 'error',
-        error: 'InputValidationError',
-      });
-      return {
-        isError: true,
-        content: [{ type: 'text' as const, text: JSON.stringify(errorPayload) }],
-      };
-    }
-
-    const data = parsed.data;
-
-    try {
-      if (data.allowed_company_ids !== undefined) {
-        validateCompanySubset(data.allowed_company_ids, session.allowedCompanyIds);
-      }
-
-      const context: Context = buildContext(session, {
-        allowed_company_ids: data.allowed_company_ids,
-        active_company_id: data.active_company_id,
-      });
-
-      const { content, contentType } = await client.runReport(
-        data.report_id,
-        data.doc_ids,
-        context,
-      );
-
-      const latency_ms = Date.now() - t0;
-      logger.toolCall({
-        tool: toolName,
-        args_sanitized: sanitizeArgs(toolName, args as Record<string, unknown>),
-        latency_ms,
-        status: 'ok',
-      });
-
-      return {
-        isError: false,
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({ content, contentType }),
-          },
-        ],
-      };
-    } catch (e) {
-      const latency_ms = Date.now() - t0;
-
-      if (e instanceof OdooError) {
+  server.registerTool(
+    'odoo_run_report',
+    {
+      description:
+        'Render a QWeb PDF report for the given document IDs. Returns base64-encoded PDF content with its MIME type.',
+      inputSchema: runReportSchema.shape,
+    },
+    async (args) => {
+      const t0 = Date.now();
+      const toolName = 'odoo_run_report';
+      const rawArgs = args as unknown as Record<string, unknown>;
+      try {
+        if (args.allowed_company_ids) {
+          validateCompanySubset(args.allowed_company_ids, session.allowedCompanyIds);
+        }
+        const context: Context = buildContext(session, {
+          allowed_company_ids: args.allowed_company_ids,
+          active_company_id: args.active_company_id,
+        });
+        const { content, contentType } = await client.runReport(
+          args.report_id,
+          args.doc_ids,
+          context,
+        );
         logger.toolCall({
           tool: toolName,
-          args_sanitized: sanitizeArgs(toolName, args as Record<string, unknown>),
+          args_sanitized: sanitizeArgs(toolName, rawArgs),
+          latency_ms: Date.now() - t0,
+          status: 'ok',
+        });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ content, contentType }) }],
+          isError: false,
+        };
+      } catch (e) {
+        const latency_ms = Date.now() - t0;
+        if (e instanceof OdooError) {
+          const formatted = formatMcpError(e);
+          logger.toolCall({
+            tool: toolName,
+            args_sanitized: sanitizeArgs(toolName, rawArgs),
+            latency_ms,
+            status: 'error',
+            error: formatted.error_type,
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(formatted) }],
+            isError: true,
+          };
+        }
+        const message = e instanceof Error ? e.message : String(e);
+        logger.toolCall({
+          tool: toolName,
+          args_sanitized: sanitizeArgs(toolName, rawArgs),
           latency_ms,
           status: 'error',
-          error: e.message,
+          error: 'InternalError',
         });
-
         return {
-          isError: true,
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify(formatMcpError(e)),
+              text: JSON.stringify({
+                error_type: 'InternalError',
+                message: 'unexpected error',
+                detail: message,
+              }),
             },
           ],
+          isError: true,
         };
       }
-
-      // Non-OdooError — unexpected exception. Log + return as InternalError-shaped.
-      const message = e instanceof Error ? e.message : String(e);
-      logger.toolCall({
-        tool: toolName,
-        args_sanitized: sanitizeArgs(toolName, args as Record<string, unknown>),
-        latency_ms,
-        status: 'error',
-        error: 'InternalError',
-      });
-      return {
-        isError: true,
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({
-              error_type: 'InternalError',
-              message: 'unexpected error',
-              detail: message,
-            }),
-          },
-        ],
-      };
-    }
-  });
+    },
+  );
 }

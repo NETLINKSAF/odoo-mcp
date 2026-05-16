@@ -7,79 +7,72 @@ import { formatMcpError } from '../errors.js';
 import type { Logger } from '../logger.js';
 import { executeSchema } from './schemas.js';
 
-function inputValidationError(message: string) {
-  return {
-    isError: true as const,
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify({ error_type: 'InputValidationError', message }),
-      },
-    ],
-  };
-}
-
 export function registerExecuteTool(
   server: McpServer,
   client: OdooClient,
   session: OdooSession,
   logger: Logger,
 ): void {
-  // Use the no-schema overload so we can return InputValidationError manually.
-  server.tool('odoo_execute', async (args: Record<string, unknown>) => {
-    const start = Date.now();
-
-    // Step 1: parse with Zod schema (includes model + method regex via MODEL_NAME/METHOD_NAME)
-    const parsed = executeSchema.safeParse(args);
-    if (!parsed.success) {
-      logger.toolCall({
-        tool: 'odoo_execute',
-        args_sanitized: sanitizeArgs('odoo_execute', args),
-        latency_ms: Date.now() - start,
-        status: 'error',
-        error: 'InputValidationError',
-      });
-      return inputValidationError(parsed.error.message);
-    }
-
-    const data = parsed.data;
-
-    // Step 2: validate company subset if provided
-    if (data.allowed_company_ids !== undefined) {
+  server.registerTool(
+    'odoo_execute',
+    {
+      description:
+        'Call any model method (execute_kw). Use this for operations not covered by the typed CRUD tools. Model and method are regex-validated.',
+      inputSchema: executeSchema.shape,
+    },
+    async (args) => {
+      const t0 = Date.now();
+      const rawArgs = args as unknown as Record<string, unknown>;
       try {
-        validateCompanySubset(data.allowed_company_ids, session.allowedCompanyIds);
-      } catch (e) {
-        if (e instanceof OdooError) {
-          const latency_ms = Date.now() - start;
-          logger.toolCall({
-            tool: 'odoo_execute',
-            args_sanitized: sanitizeArgs('odoo_execute', args),
-            latency_ms,
-            status: 'error',
-            error: e.message,
-          });
-          return {
-            isError: true as const,
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify(formatMcpError(e)),
-              },
-            ],
-          };
+        if (args.allowed_company_ids) {
+          validateCompanySubset(args.allowed_company_ids, session.allowedCompanyIds);
         }
-        // Non-OdooError from company validation — log and return as InternalError.
-        const message = e instanceof Error ? e.message : String(e);
-        const latency_ms = Date.now() - start;
+        const context: Context = buildContext(session, {
+          allowed_company_ids: args.allowed_company_ids,
+          active_company_id: args.active_company_id,
+        });
+        const result = await client.execute(
+          args.model,
+          args.method,
+          args.args,
+          args.kwargs,
+          context,
+        );
         logger.toolCall({
           tool: 'odoo_execute',
-          args_sanitized: sanitizeArgs('odoo_execute', args),
+          args_sanitized: sanitizeArgs('odoo_execute', rawArgs),
+          latency_ms: Date.now() - t0,
+          status: 'ok',
+        });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          isError: false,
+        };
+      } catch (e) {
+        const latency_ms = Date.now() - t0;
+        if (e instanceof OdooError) {
+          const formatted = formatMcpError(e);
+          logger.toolCall({
+            tool: 'odoo_execute',
+            args_sanitized: sanitizeArgs('odoo_execute', rawArgs),
+            latency_ms,
+            status: 'error',
+            error: formatted.error_type,
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(formatted) }],
+            isError: true,
+          };
+        }
+        const message = e instanceof Error ? e.message : String(e);
+        logger.toolCall({
+          tool: 'odoo_execute',
+          args_sanitized: sanitizeArgs('odoo_execute', rawArgs),
           latency_ms,
           status: 'error',
           error: 'InternalError',
         });
         return {
-          isError: true as const,
           content: [
             {
               type: 'text' as const,
@@ -90,83 +83,9 @@ export function registerExecuteTool(
               }),
             },
           ],
+          isError: true,
         };
       }
-    }
-
-    // Step 3: build context
-    const context: Context = buildContext(session, {
-      allowed_company_ids: data.allowed_company_ids,
-      active_company_id: data.active_company_id,
-    });
-
-    // Step 4: call client.execute
-    try {
-      const result = await client.execute(data.model, data.method, data.args, data.kwargs, context);
-
-      const latency_ms = Date.now() - start;
-
-      // Step 5 & 6: return result and log
-      logger.toolCall({
-        tool: 'odoo_execute',
-        args_sanitized: sanitizeArgs('odoo_execute', args),
-        latency_ms,
-        status: 'ok',
-      });
-
-      return {
-        isError: false as const,
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(result),
-          },
-        ],
-      };
-    } catch (e) {
-      // Step 7: on OdooError, format and return isError:true
-      if (e instanceof OdooError) {
-        const latency_ms = Date.now() - start;
-        logger.toolCall({
-          tool: 'odoo_execute',
-          args_sanitized: sanitizeArgs('odoo_execute', args),
-          latency_ms,
-          status: 'error',
-          error: e.message,
-        });
-        return {
-          isError: true as const,
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify(formatMcpError(e)),
-            },
-          ],
-        };
-      }
-      // Step 8: Non-OdooError — unexpected exception. Log + return as InternalError-shaped.
-      const message = e instanceof Error ? e.message : String(e);
-      const latency_ms = Date.now() - start;
-      logger.toolCall({
-        tool: 'odoo_execute',
-        args_sanitized: sanitizeArgs('odoo_execute', args),
-        latency_ms,
-        status: 'error',
-        error: 'InternalError',
-      });
-      return {
-        isError: true as const,
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({
-              error_type: 'InternalError',
-              message: 'unexpected error',
-              detail: message,
-            }),
-          },
-        ],
-      };
-    }
-  });
+    },
+  );
 }

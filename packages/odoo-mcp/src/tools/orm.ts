@@ -1,7 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type Context, OdooError, type OdooSession, sanitizeArgs } from '@netlinksinc/odoo-client';
 import type { OdooClient } from '@netlinksinc/odoo-client';
-import type { z } from 'zod';
 
 import { buildContext, validateCompanySubset } from '../context.js';
 import { formatMcpError } from '../errors.js';
@@ -20,87 +19,51 @@ type ToolResult = {
   isError: boolean;
 };
 
-/**
- * Central handler for all ORM tool invocations.
- *
- * Sequence:
- *  1. Parse/validate args with the schema (returns isError on failure).
- *  2. Validate allowed_company_ids against session (returns isError on failure).
- *  3. Build Odoo RPC context.
- *  4. Execute the client method.
- *  5. Return serialised result or formatted OdooError.
- *
- * The callback is registered with the 2-arg overload `server.tool(name, cb)` so
- * that tests can drive it via a simple mock that stores and directly calls `cb`.
- * Inside the callback we perform our own safeParse so validation failures produce
- * `isError: true` (not a thrown McpError as the SDK's schema-overload would do).
- */
-async function executeHandler<T>(
+/** Shape every tool handler funnels through after SDK-level Zod parsing. */
+async function callOrm<T extends { allowed_company_ids?: number[]; active_company_id?: number }>(
   tool: string,
-  args: unknown,
-  schema: z.ZodSchema<T>,
+  args: T,
   exec: (parsed: T, context: Context) => Promise<unknown>,
   logger: Logger,
   session: OdooSession,
 ): Promise<ToolResult> {
   const t0 = Date.now();
+  const rawArgs = args as unknown as Record<string, unknown>;
   try {
-    const parsed = schema.safeParse(args);
-    if (!parsed.success) {
-      const text = JSON.stringify({
-        error_type: 'InputValidationError',
-        message: parsed.error.message,
-      });
-      logger.toolCall({
-        tool,
-        args_sanitized: sanitizeArgs(tool, args as Record<string, unknown>),
-        latency_ms: Date.now() - t0,
-        status: 'error',
-        error: 'InputValidationError',
-      });
-      return { content: [{ type: 'text', text }], isError: true };
+    if (args.allowed_company_ids) {
+      validateCompanySubset(args.allowed_company_ids, session.allowedCompanyIds);
     }
-
-    // Company-subset enforcement (US-7 AC-7).
-    const data = parsed.data as {
-      allowed_company_ids?: number[];
-      active_company_id?: number;
-    };
-    if (data.allowed_company_ids) {
-      validateCompanySubset(data.allowed_company_ids, session.allowedCompanyIds);
-    }
-
     const context = buildContext(session, {
-      allowed_company_ids: data.allowed_company_ids,
-      active_company_id: data.active_company_id,
+      allowed_company_ids: args.allowed_company_ids,
+      active_company_id: args.active_company_id,
     });
-
-    const result = await exec(parsed.data, context);
+    const result = await exec(args, context);
     logger.toolCall({
       tool,
-      args_sanitized: sanitizeArgs(tool, args as Record<string, unknown>),
+      args_sanitized: sanitizeArgs(tool, rawArgs),
       latency_ms: Date.now() - t0,
       status: 'ok',
     });
     return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false };
   } catch (e) {
+    const latency_ms = Date.now() - t0;
     if (e instanceof OdooError) {
       const formatted = formatMcpError(e);
       logger.toolCall({
         tool,
-        args_sanitized: sanitizeArgs(tool, args as Record<string, unknown>),
-        latency_ms: Date.now() - t0,
+        args_sanitized: sanitizeArgs(tool, rawArgs),
+        latency_ms,
         status: 'error',
         error: formatted.error_type,
       });
       return { content: [{ type: 'text', text: JSON.stringify(formatted) }], isError: true };
     }
-    // Non-OdooError — unexpected exception. Log + return as InternalError-shaped.
+    // Non-OdooError — log + return InternalError shape (don't re-throw to MCP SDK)
     const message = e instanceof Error ? e.message : String(e);
     logger.toolCall({
       tool,
-      args_sanitized: sanitizeArgs(tool, args as Record<string, unknown>),
-      latency_ms: Date.now() - t0,
+      args_sanitized: sanitizeArgs(tool, rawArgs),
+      latency_ms,
       status: 'error',
       error: 'InternalError',
     });
@@ -121,14 +84,12 @@ async function executeHandler<T>(
 }
 
 /**
- * Register all 6 ORM tools on the MCP server.
+ * Register all 6 ORM tools on the MCP server using the 3-arg registerTool
+ * overload that advertises the Zod input schema as JSON Schema in tools/list.
  *
- * Tools registered: odoo_search_read, odoo_read, odoo_create, odoo_write,
- * odoo_unlink, odoo_search_count.
- *
- * The server.tool(name, cb) 2-arg overload is used deliberately so that
- * validation failures return `isError: true` rather than a thrown McpError.
- * Tests drive the handlers via a lightweight mock that stores the callback.
+ * Without inputSchema in the registration, MCP clients (Claude Code,
+ * Claude Desktop, etc.) see an empty properties bag and strip every arg
+ * before calling — making tools effectively unusable.
  */
 export function registerOrmTools(
   server: McpServer,
@@ -136,17 +97,17 @@ export function registerOrmTools(
   session: OdooSession,
   logger: Logger,
 ): void {
-  // -------------------------------------------------------------------------
-  // odoo_search_read
-  // -------------------------------------------------------------------------
-  // biome-ignore lint/suspicious/noExplicitAny: MCP SDK no-schema tool() overload signature mismatch
-  (server.tool as any)(
+  server.registerTool(
     'odoo_search_read',
-    async (args: unknown): Promise<ToolResult> =>
-      executeHandler(
+    {
+      description:
+        'Search and read records in one call. Returns matching rows up to `limit` (default 80).',
+      inputSchema: searchReadSchema.shape,
+    },
+    async (args) =>
+      callOrm(
         'odoo_search_read',
         args,
-        searchReadSchema,
         (parsed, context) =>
           client.searchRead(parsed.model, parsed.domain as never[], parsed.fields, {
             limit: parsed.limit,
@@ -159,34 +120,33 @@ export function registerOrmTools(
       ),
   );
 
-  // -------------------------------------------------------------------------
-  // odoo_read
-  // -------------------------------------------------------------------------
-  // biome-ignore lint/suspicious/noExplicitAny: MCP SDK no-schema tool() overload signature mismatch
-  (server.tool as any)(
+  server.registerTool(
     'odoo_read',
-    async (args: unknown): Promise<ToolResult> =>
-      executeHandler(
+    {
+      description: 'Read specific record IDs from a model. Returns one row per ID.',
+      inputSchema: readSchema.shape,
+    },
+    async (args) =>
+      callOrm(
         'odoo_read',
         args,
-        readSchema,
         (parsed, context) => client.read(parsed.model, parsed.ids, parsed.fields, context),
         logger,
         session,
       ),
   );
 
-  // -------------------------------------------------------------------------
-  // odoo_create
-  // -------------------------------------------------------------------------
-  // biome-ignore lint/suspicious/noExplicitAny: MCP SDK no-schema tool() overload signature mismatch
-  (server.tool as any)(
+  server.registerTool(
     'odoo_create',
-    async (args: unknown): Promise<ToolResult> =>
-      executeHandler(
+    {
+      description:
+        'Create one or many records. `values` may be a single dict or an array of dicts.',
+      inputSchema: createSchema.shape,
+    },
+    async (args) =>
+      callOrm(
         'odoo_create',
         args,
-        createSchema,
         (parsed, context) =>
           client.create(
             parsed.model,
@@ -198,51 +158,48 @@ export function registerOrmTools(
       ),
   );
 
-  // -------------------------------------------------------------------------
-  // odoo_write
-  // -------------------------------------------------------------------------
-  // biome-ignore lint/suspicious/noExplicitAny: MCP SDK no-schema tool() overload signature mismatch
-  (server.tool as any)(
+  server.registerTool(
     'odoo_write',
-    async (args: unknown): Promise<ToolResult> =>
-      executeHandler(
+    {
+      description: 'Update existing records. Applies `values` to every record in `ids`.',
+      inputSchema: writeSchema.shape,
+    },
+    async (args) =>
+      callOrm(
         'odoo_write',
         args,
-        writeSchema,
         (parsed, context) => client.write(parsed.model, parsed.ids, parsed.values, context),
         logger,
         session,
       ),
   );
 
-  // -------------------------------------------------------------------------
-  // odoo_unlink
-  // -------------------------------------------------------------------------
-  // biome-ignore lint/suspicious/noExplicitAny: MCP SDK no-schema tool() overload signature mismatch
-  (server.tool as any)(
+  server.registerTool(
     'odoo_unlink',
-    async (args: unknown): Promise<ToolResult> =>
-      executeHandler(
+    {
+      description: 'Delete records. Returns true on success.',
+      inputSchema: unlinkSchema.shape,
+    },
+    async (args) =>
+      callOrm(
         'odoo_unlink',
         args,
-        unlinkSchema,
         (parsed, context) => client.unlink(parsed.model, parsed.ids, context),
         logger,
         session,
       ),
   );
 
-  // -------------------------------------------------------------------------
-  // odoo_search_count
-  // -------------------------------------------------------------------------
-  // biome-ignore lint/suspicious/noExplicitAny: MCP SDK no-schema tool() overload signature mismatch
-  (server.tool as any)(
+  server.registerTool(
     'odoo_search_count',
-    async (args: unknown): Promise<ToolResult> =>
-      executeHandler(
+    {
+      description: 'Count records matching the domain. Returns an integer.',
+      inputSchema: searchCountSchema.shape,
+    },
+    async (args) =>
+      callOrm(
         'odoo_search_count',
         args,
-        searchCountSchema,
         (parsed, context) => client.searchCount(parsed.model, parsed.domain as never[], context),
         logger,
         session,

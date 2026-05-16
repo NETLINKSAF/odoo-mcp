@@ -7,79 +7,72 @@ import { formatMcpError } from '../errors.js';
 import type { Logger } from '../logger.js';
 import { callActionSchema } from './schemas.js';
 
-function inputValidationError(message: string) {
-  return {
-    isError: true as const,
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify({ error_type: 'InputValidationError', message }),
-      },
-    ],
-  };
-}
-
 export function registerActionTool(
   server: McpServer,
   client: OdooClient,
   session: OdooSession,
   logger: Logger,
 ): void {
-  // Use the no-schema overload so we can return InputValidationError manually.
-  server.tool('odoo_call_action', async (args: Record<string, unknown>) => {
-    const start = Date.now();
-
-    // Step 1: parse with Zod schema (model + action_name regex enforced via MODEL_NAME/METHOD_NAME)
-    const parsed = callActionSchema.safeParse(args);
-    if (!parsed.success) {
-      logger.toolCall({
-        tool: 'odoo_call_action',
-        args_sanitized: sanitizeArgs('odoo_call_action', args),
-        latency_ms: Date.now() - start,
-        status: 'error',
-        error: 'InputValidationError',
-      });
-      return inputValidationError(parsed.error.message);
-    }
-
-    const data = parsed.data;
-
-    // Step 2: validate company subset if provided
-    if (data.allowed_company_ids !== undefined) {
+  server.registerTool(
+    'odoo_call_action',
+    {
+      description:
+        'Call a named server action (a method) on a model. Caller-supplied `context` merges with session context but cannot override `uid` or `company_id`.',
+      inputSchema: callActionSchema.shape,
+    },
+    async (args) => {
+      const t0 = Date.now();
+      const rawArgs = args as unknown as Record<string, unknown>;
       try {
-        validateCompanySubset(data.allowed_company_ids, session.allowedCompanyIds);
-      } catch (e) {
-        if (e instanceof OdooError) {
-          const latency_ms = Date.now() - start;
-          logger.toolCall({
-            tool: 'odoo_call_action',
-            args_sanitized: sanitizeArgs('odoo_call_action', args),
-            latency_ms,
-            status: 'error',
-            error: e.message,
-          });
-          return {
-            isError: true as const,
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify(formatMcpError(e)),
-              },
-            ],
-          };
+        if (args.allowed_company_ids) {
+          validateCompanySubset(args.allowed_company_ids, session.allowedCompanyIds);
         }
-        // Non-OdooError from company validation — log and return as InternalError.
-        const message = e instanceof Error ? e.message : String(e);
-        const latency_ms = Date.now() - start;
+        // buildContext re-applies session-authoritative fields AFTER extraContext
+        // so caller-supplied context cannot override identity (US-5 AC-4 + US-7 AC-7).
+        const context = buildContext(
+          session,
+          {
+            allowed_company_ids: args.allowed_company_ids,
+            active_company_id: args.active_company_id,
+          },
+          args.context,
+        );
+        const result = await client.callAction(args.model, args.ids, args.action_name, context);
         logger.toolCall({
           tool: 'odoo_call_action',
-          args_sanitized: sanitizeArgs('odoo_call_action', args),
+          args_sanitized: sanitizeArgs('odoo_call_action', rawArgs),
+          latency_ms: Date.now() - t0,
+          status: 'ok',
+        });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          isError: false,
+        };
+      } catch (e) {
+        const latency_ms = Date.now() - t0;
+        if (e instanceof OdooError) {
+          const formatted = formatMcpError(e);
+          logger.toolCall({
+            tool: 'odoo_call_action',
+            args_sanitized: sanitizeArgs('odoo_call_action', rawArgs),
+            latency_ms,
+            status: 'error',
+            error: formatted.error_type,
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(formatted) }],
+            isError: true,
+          };
+        }
+        const message = e instanceof Error ? e.message : String(e);
+        logger.toolCall({
+          tool: 'odoo_call_action',
+          args_sanitized: sanitizeArgs('odoo_call_action', rawArgs),
           latency_ms,
           status: 'error',
           error: 'InternalError',
         });
         return {
-          isError: true as const,
           content: [
             {
               type: 'text' as const,
@@ -90,89 +83,9 @@ export function registerActionTool(
               }),
             },
           ],
+          isError: true,
         };
       }
-    }
-
-    // Step 3: merge caller context with company context.
-    // buildContext re-applies uid/company_id/allowed_company_ids AFTER extraContext
-    // so caller-supplied context CANNOT override identity (US-5 AC-4 + US-7 AC-7).
-    const context = buildContext(
-      session,
-      {
-        allowed_company_ids: data.allowed_company_ids,
-        active_company_id: data.active_company_id,
-      },
-      data.context,
-    );
-
-    // Step 4: call client.callAction
-    try {
-      const result = await client.callAction(data.model, data.ids, data.action_name, context);
-
-      const latency_ms = Date.now() - start;
-
-      // Step 5: return result and log
-      logger.toolCall({
-        tool: 'odoo_call_action',
-        args_sanitized: sanitizeArgs('odoo_call_action', args),
-        latency_ms,
-        status: 'ok',
-      });
-
-      return {
-        isError: false as const,
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(result),
-          },
-        ],
-      };
-    } catch (e) {
-      // Step 6: on OdooError, format and return isError:true
-      if (e instanceof OdooError) {
-        const latency_ms = Date.now() - start;
-        logger.toolCall({
-          tool: 'odoo_call_action',
-          args_sanitized: sanitizeArgs('odoo_call_action', args),
-          latency_ms,
-          status: 'error',
-          error: e.message,
-        });
-        return {
-          isError: true as const,
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify(formatMcpError(e)),
-            },
-          ],
-        };
-      }
-      // Step 7: Non-OdooError — unexpected exception. Log + return as InternalError-shaped.
-      const message = e instanceof Error ? e.message : String(e);
-      const latency_ms = Date.now() - start;
-      logger.toolCall({
-        tool: 'odoo_call_action',
-        args_sanitized: sanitizeArgs('odoo_call_action', args),
-        latency_ms,
-        status: 'error',
-        error: 'InternalError',
-      });
-      return {
-        isError: true as const,
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({
-              error_type: 'InternalError',
-              message: 'unexpected error',
-              detail: message,
-            }),
-          },
-        ],
-      };
-    }
-  });
+    },
+  );
 }
