@@ -8,3 +8,7 @@ dist/
 coverage/
 .vscode/
 .idea/
+
+# Spec-engine internal artifacts (requirements, design, audit logs,
+# security reviews, internal docs). Local-only — never publish.
+.claude/
