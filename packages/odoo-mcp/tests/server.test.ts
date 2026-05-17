@@ -60,6 +60,7 @@ import { registerResources } from '../src/resources.js';
 import { registerAllTools } from '../src/tools/index.js';
 import { createLogger } from '../src/logger.js';
 import type { OdooConfig } from '@netlinksinc/odoo-client';
+import type { ClientResolver } from '../src/types.js';
 
 // ---------------------------------------------------------------------------
 // Shared config
@@ -134,22 +135,19 @@ describe('createOdooMcpServer', () => {
     expect(registerResources).toHaveBeenCalledWith(server, probeResult);
   });
 
-  // Test 5 — registerAllTools is called with server, client, session, and logger
-  it('calls registerAllTools with server, client, session, and logger', async () => {
-    const fakeSession = { uid: 1, db: 'testdb', apiKey: 'test-key-do-not-leak' };
-    vi.mocked(OdooClient).mockImplementation(() => ({
-      authenticate: vi.fn().mockResolvedValue(fakeSession),
-    }));
-
+  // Test 5 — registerAllTools is called with the new 3-arg signature (server, resolver, logger)
+  it('calls registerAllTools with server, resolver, and logger (3-arg signature)', async () => {
     const { server, logger } = await createOdooMcpServer({ odooConfig: ODOO_CONFIG });
-    const clientInstance = vi.mocked(OdooClient).mock.results[0]?.value;
 
     expect(registerAllTools).toHaveBeenCalledTimes(1);
-    expect(registerAllTools).toHaveBeenCalledWith(server, clientInstance, fakeSession, logger);
+    const [calledServer, calledResolver, calledLogger] = vi.mocked(registerAllTools).mock.calls[0]!;
+    expect(calledServer).toBe(server);
+    expect(typeof calledResolver).toBe('function');
+    expect(calledLogger).toBe(logger);
   });
 
-  // Test 6 — Server is constructed with name='odoo-mcp' and version='0.2.0'
-  it('constructs McpServer with name odoo-mcp and version 0.2.0', async () => {
+  // Test 6 — Server is constructed with name='odoo-mcp' and version='0.2.1'
+  it('constructs McpServer with name odoo-mcp and version 0.2.1', async () => {
     const constructorSpy = vi.spyOn(
       { McpServer },
       'McpServer',
@@ -226,5 +224,45 @@ describe('createOdooMcpServer', () => {
 
     const result = await createOdooMcpServer({ odooConfig: ODOO_CONFIG });
     expect(result).toHaveProperty('probeOk', false);
+  });
+
+  // Test 11 (NEW) — without clientResolver, the singleton resolver yields probeClient + session
+  it('without clientResolver, server dispatches tools via singleton resolver', async () => {
+    const fakeSession = { uid: 1, db: 'testdb', apiKey: 'test-key-do-not-leak' };
+    vi.mocked(OdooClient).mockImplementation(() => ({
+      authenticate: vi.fn().mockResolvedValue(fakeSession),
+    }));
+
+    const { probeClient } = await createOdooMcpServer({ odooConfig: ODOO_CONFIG });
+
+    // The resolver passed to registerAllTools must be the singleton one
+    const [, resolver] = vi.mocked(registerAllTools).mock.calls[0]!;
+    const resolved = await resolver();
+
+    expect(resolved.client).toBe(probeClient);
+    expect(resolved.session).toEqual(fakeSession);
+  });
+
+  // Test 12 (NEW) — with clientResolver provided, that resolver is forwarded verbatim
+  it('with clientResolver provided, that resolver is used', async () => {
+    const mockResolver: ClientResolver = vi.fn().mockResolvedValue({
+      client: {} as never,
+      session: { uid: 99, db: 'other', apiKey: 'custom' },
+    });
+
+    await createOdooMcpServer({ odooConfig: ODOO_CONFIG, clientResolver: mockResolver });
+
+    const [, resolver] = vi.mocked(registerAllTools).mock.calls[0]!;
+    expect(resolver).toBe(mockResolver);
+  });
+
+  // Test 13 (NEW) — return object includes probeClient
+  it('return object includes probeClient', async () => {
+    const result = await createOdooMcpServer({ odooConfig: ODOO_CONFIG });
+
+    expect(result).toHaveProperty('probeClient');
+    // probeClient must be the OdooClient instance that was constructed
+    const clientInstance = vi.mocked(OdooClient).mock.results[0]?.value;
+    expect(result.probeClient).toBe(clientInstance);
   });
 });
