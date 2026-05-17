@@ -12,3 +12,6 @@ coverage/
 # Spec-engine internal artifacts (requirements, design, audit logs,
 # security reviews, internal docs). Local-only — never publish.
 .claude/
+
+# Generated reports (XLSX, scripts that pull live company data). Local-only.
+reports/
