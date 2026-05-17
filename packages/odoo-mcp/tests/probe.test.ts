@@ -210,10 +210,29 @@ describe('runProbe — all sub-queries reject (AC-3)', () => {
   it('writes all-failed warning JSON to stderr', async () => {
     await runProbe(client);
     expect(stderrSpy).toHaveBeenCalled();
-    const written = stderrSpy.mock.calls[0]?.[0] as string;
-    const payload = JSON.parse(written);
-    expect(payload.event).toBe('warning');
-    expect(payload.message).toBe('All probe sub-queries failed');
+    const writes = stderrSpy.mock.calls.map((c) => JSON.parse(c[0] as string));
+    const aggregateWarning = writes.find(
+      (p) => p.event === 'warning' && p.message === 'All probe sub-queries failed',
+    );
+    expect(aggregateWarning).toBeDefined();
+  });
+
+  it('writes per-field probe_failed entries when sub-queries reject', async () => {
+    await runProbe(client);
+    const writes = stderrSpy.mock.calls.map((c) => JSON.parse(c[0] as string));
+    const failureFields = writes.filter((p) => p.event === 'probe_failed').map((p) => p.field);
+    // All 7 sub-queries fail in this test, so we expect 7 probe_failed entries
+    expect(failureFields).toEqual(
+      expect.arrayContaining([
+        'modules',
+        'reports',
+        'serverActions',
+        'companies',
+        'currencies',
+        'fiscalYear',
+        'userContext',
+      ]),
+    );
   });
 
   it('stderr warning is valid JSON ending with newline', async () => {

@@ -161,18 +161,32 @@ export async function runProbe(client: OdooClient): Promise<ProbeResult> {
   ]);
 
   // -------------------------------------------------------------------
-  // Threat-model US-3 AC-6: warn if all 7 promises failed
+  // Per-field failure logging — emit one stderr line per rejected probe
+  // so operators can diagnose `probe_ok: false` without instrumentation.
   // -------------------------------------------------------------------
-  const succeeded = [
-    modulesResult,
-    reportsResult,
-    serverActionsResult,
-    companiesResult,
-    currenciesResult,
-    fiscalYearResult,
-    userContextResult,
-  ].filter((r) => r.status === 'fulfilled').length;
+  const namedResults: Array<{ field: string; result: PromiseSettledResult<unknown> }> = [
+    { field: 'modules', result: modulesResult },
+    { field: 'reports', result: reportsResult },
+    { field: 'serverActions', result: serverActionsResult },
+    { field: 'companies', result: companiesResult },
+    { field: 'currencies', result: currenciesResult },
+    { field: 'fiscalYear', result: fiscalYearResult },
+    { field: 'userContext', result: userContextResult },
+  ];
+  for (const { field, result } of namedResults) {
+    if (result.status === 'rejected') {
+      process.stderr.write(
+        `${JSON.stringify({
+          event: 'probe_failed',
+          field,
+          message: extractMessage(result.reason),
+        })}\n`,
+      );
+    }
+  }
 
+  // Threat-model US-3 AC-6: also emit the aggregate warning if EVERY probe failed
+  const succeeded = namedResults.filter((r) => r.result.status === 'fulfilled').length;
   if (succeeded === 0) {
     process.stderr.write(
       `${JSON.stringify({ event: 'warning', message: 'All probe sub-queries failed' })}\n`,
