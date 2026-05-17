@@ -21,6 +21,13 @@ export interface AppConfig {
     port: number;
     /** Bearer token that clients must supply in the `Authorization` header. */
     bearerToken: string;
+    /**
+     * When `true`, the /health redaction decision trusts the first entry of
+     * `X-Forwarded-For` to determine the real client IP. Required for
+     * proxy-fronted deployments (Caddy, nginx, fly.io) where every request
+     * arrives at Node from the loopback interface. Default `false`.
+     */
+    trustProxy: boolean;
   };
 }
 

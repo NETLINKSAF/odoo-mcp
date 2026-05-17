@@ -530,6 +530,74 @@ describe('T-17: /health loopback redaction (US-3 AC-7)', () => {
     expect(typeof b['started_at']).toBe('string');
     expect(b['probe_ok']).toBe(true);
   });
+
+  it('redacts payload when loopback caller adds X-Forwarded-For (no trustProxy)', async () => {
+    // Simulates a proxy-fronted deployment without MCP_TRUST_PROXY set.
+    // The socket is loopback but the XFF header signals a proxy → safe to redact.
+    const { status, body } = await request(port, 'GET', '/health', {
+      'X-Forwarded-For': '8.8.8.8',
+    });
+    expect(status).toBe(200);
+    const b = body as Record<string, unknown>;
+    expect(b['odoo_url']).toBeUndefined();
+    expect(b['odoo_db']).toBeUndefined();
+    expect(b['ok']).toBe(true);
+    expect(b['mode']).toBe('http');
+    expect(b['probe_ok']).toBe(true);
+  });
+});
+
+describe('/health redaction with MCP_TRUST_PROXY=true (proxy-fronted)', () => {
+  let port: number;
+  let close: () => Promise<void>;
+
+  beforeAll(async () => {
+    const result = await startHttpTransport({
+      port: 0,
+      bearerToken: 'e'.repeat(32),
+      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
+      logger: makeLogger(),
+      healthPayload: makeHealthPayload(true),
+      trustProxy: true,
+    });
+    const addr = result.httpServer.address() as AddressInfo;
+    port = addr.port;
+    close = result.close;
+  });
+
+  afterAll(async () => {
+    await close();
+  });
+
+  it('returns FULL payload when XFF first-hop is loopback (true local through proxy)', async () => {
+    const { status, body } = await request(port, 'GET', '/health', {
+      'X-Forwarded-For': '127.0.0.1',
+    });
+    expect(status).toBe(200);
+    const b = body as Record<string, unknown>;
+    expect(b['odoo_url']).toBe('https://erp.example.com');
+    expect(b['odoo_db']).toBe('testdb');
+  });
+
+  it('REDACTS payload when XFF first-hop is external (real-world Caddy scenario)', async () => {
+    const { status, body } = await request(port, 'GET', '/health', {
+      'X-Forwarded-For': '203.0.113.45, 127.0.0.1',
+    });
+    expect(status).toBe(200);
+    const b = body as Record<string, unknown>;
+    expect(b['odoo_url']).toBeUndefined();
+    expect(b['odoo_db']).toBeUndefined();
+    expect(b['ok']).toBe(true);
+    expect(b['mode']).toBe('http');
+    expect(b['probe_ok']).toBe(true);
+  });
+
+  it('returns FULL payload when no XFF present even with trustProxy=true (direct loopback)', async () => {
+    const { status, body } = await request(port, 'GET', '/health');
+    expect(status).toBe(200);
+    const b = body as Record<string, unknown>;
+    expect(b['odoo_url']).toBe('https://erp.example.com');
+  });
 });
 
 // ---- 5. request_id propagation --------------------------------------------

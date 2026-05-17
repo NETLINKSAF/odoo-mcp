@@ -23,6 +23,10 @@ const configSchema = z.object({
   MODE: z.enum(['stdio', 'http']).default('stdio'),
   MCP_PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   MCP_BEARER_TOKEN: z.string().optional(),
+  MCP_TRUST_PROXY: z
+    .union([z.literal('true'), z.literal('false'), z.literal('1'), z.literal('0')])
+    .transform((v) => v === 'true' || v === '1')
+    .default('false'),
 });
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {
@@ -91,6 +95,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
             port: parsed.MCP_PORT,
             // biome-ignore lint/style/noNonNullAssertion: validated by the conditional exit guard above (MODE=http + empty token → process.exit(1))
             bearerToken: parsed.MCP_BEARER_TOKEN!,
+            trustProxy: parsed.MCP_TRUST_PROXY,
           }
         : undefined,
   };

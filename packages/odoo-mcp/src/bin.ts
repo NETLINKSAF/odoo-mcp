@@ -66,6 +66,8 @@ const STARTUP_TIMEOUT_MS = 30_000;
         port: config.http!.port,
         // biome-ignore lint/style/noNonNullAssertion: config.http guaranteed defined when mode='http' (validated in loadConfig)
         bearerToken: config.http!.bearerToken,
+        // biome-ignore lint/style/noNonNullAssertion: config.http guaranteed defined when mode='http' (validated in loadConfig)
+        trustProxy: config.http!.trustProxy,
         server,
         logger,
         healthPayload,

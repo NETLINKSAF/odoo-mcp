@@ -78,6 +78,14 @@ export interface HttpTransportConfig {
   server: McpServer;
   logger: Logger;
   healthPayload: HealthPayload;
+  /**
+   * When `true`, the /health redaction decision trusts the first entry of
+   * `X-Forwarded-For` to determine whether the real client is loopback. Use
+   * `true` for deployments behind a known reverse proxy on the same host
+   * (Caddy, nginx, fly.io edge). Default `false` preserves the original
+   * unspoofable behavior for direct deployments.
+   */
+  trustProxy?: boolean;
 }
 
 /** Per-request metadata extracted by the HTTP handler. */
@@ -301,6 +309,38 @@ function isLoopbackAddress(addr: string | undefined): boolean {
 }
 
 /**
+ * Determines whether the /health request originated from a true local caller
+ * and should therefore receive the full payload (including odoo_url and
+ * odoo_db).
+ *
+ * Decision matrix:
+ * - Socket remote address is non-loopback                              → false (external)
+ * - Socket is loopback AND no X-Forwarded-For header                   → true  (genuine local call)
+ * - Socket is loopback AND X-Forwarded-For present AND !trustProxy     → false (don't trust spoofable XFF; safer to redact)
+ * - Socket is loopback AND X-Forwarded-For present AND  trustProxy     → use first-hop XFF for the decision
+ *
+ * This matters when a reverse proxy (Caddy, nginx, fly.io) is on the same
+ * host: every request arrives at Node from 127.0.0.1, so the original
+ * unspoofable socket check would always full-payload external callers.
+ */
+function isLocalHealthCaller(
+  socketAddr: string | undefined,
+  xffHeader: string | string[] | undefined,
+  trustProxy: boolean,
+): boolean {
+  if (!isLoopbackAddress(socketAddr)) return false;
+
+  const xff =
+    typeof xffHeader === 'string' ? xffHeader : Array.isArray(xffHeader) ? xffHeader[0] : undefined;
+
+  if (xff === undefined) return true;
+  if (!trustProxy) return false;
+
+  const firstHop = xff.split(',')[0]?.trim();
+  return isLoopbackAddress(firstHop);
+}
+
+/**
  * Emits a structured `http_request` log line.
  * Includes request_id for correlation (US-4 AC-7).
  */
@@ -480,8 +520,14 @@ export async function startHttpTransport(
           const status = probe_ok ? 200 : 503;
 
           let body: unknown;
-          if (isLoopbackAddress(remoteAddr)) {
-            // Full payload for loopback callers (US-3 AC-7)
+          if (
+            isLocalHealthCaller(
+              remoteAddr,
+              req.headers['x-forwarded-for'],
+              config.trustProxy === true,
+            )
+          ) {
+            // Full payload for genuine local callers (US-3 AC-7)
             body = { ok, mode, odoo_url, odoo_db, started_at, probe_ok };
           } else {
             // Redacted payload for remote callers — no odoo_url or odoo_db
