@@ -269,4 +269,35 @@ describe('createLogger — HTTP observability fields (T-02)', () => {
     const obj = JSON.parse(line.trim()) as Record<string, unknown>;
     expect(obj).not.toHaveProperty('mode');
   });
+
+  // T-02 user_id present: emits user_id in JSON
+  it('toolCall with user_id emits user_id in JSON', () => {
+    const logger = createLogger();
+    logger.toolCall({
+      tool: 'odoo_search_read',
+      args_sanitized: {},
+      latency_ms: 5,
+      status: 'ok',
+      user_id: 'user@example.com',
+    });
+
+    const line = stderrSpy.mock.calls[0][0] as string;
+    const obj = JSON.parse(line.trim()) as Record<string, unknown>;
+    expect(obj['user_id']).toBe('user@example.com');
+  });
+
+  // T-02 user_id absent: omits user_id from JSON
+  it('toolCall without user_id omits user_id from JSON', () => {
+    const logger = createLogger();
+    logger.toolCall({
+      tool: 'odoo_search_read',
+      args_sanitized: {},
+      latency_ms: 5,
+      status: 'ok',
+    });
+
+    const line = stderrSpy.mock.calls[0][0] as string;
+    const obj = JSON.parse(line.trim()) as Record<string, unknown>;
+    expect(obj).not.toHaveProperty('user_id');
+  });
 });

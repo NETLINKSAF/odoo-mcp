@@ -64,8 +64,7 @@ const STARTUP_TIMEOUT_MS = 30_000;
       const { close } = await startHttpTransport({
         // biome-ignore lint/style/noNonNullAssertion: config.http guaranteed defined when mode='http' (validated in loadConfig)
         port: config.http!.port,
-        // biome-ignore lint/style/noNonNullAssertion: config.http guaranteed defined when mode='http' (validated in loadConfig)
-        bearerToken: config.http!.bearerToken,
+        bearerToken: '',
         // biome-ignore lint/style/noNonNullAssertion: config.http guaranteed defined when mode='http' (validated in loadConfig)
         trustProxy: config.http!.trustProxy,
         server,

@@ -15,6 +15,7 @@ export interface Logger {
     client_ip?: string; // HTTP mode only
     user_agent?: string; // HTTP mode only
     request_id?: string; // HTTP mode only (UUIDv4, caller-supplied)
+    user_id?: string; // email of authenticated OAuth user
   }): void;
   startup(info: {
     odoo_url: string;
@@ -68,6 +69,9 @@ export function createLogger(logFile?: string): Logger {
       }
       if (entry.request_id !== undefined) {
         obj.request_id = entry.request_id;
+      }
+      if (entry.user_id !== undefined) {
+        obj.user_id = entry.user_id;
       }
       emit(JSON.stringify(obj));
     },

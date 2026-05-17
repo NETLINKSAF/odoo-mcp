@@ -11,6 +11,11 @@ declare const process: {
   exit: (code?: number) => never;
 };
 
+// Buffer is a Node.js global; declare only the subset we use.
+declare const Buffer: {
+  from(value: string, encoding?: string): { length: number };
+};
+
 const configSchema = z.object({
   ODOO_URL: z
     .string()
@@ -27,6 +32,10 @@ const configSchema = z.object({
     .union([z.literal('true'), z.literal('false'), z.literal('1'), z.literal('0')])
     .transform((v) => v === 'true' || v === '1')
     .default('false'),
+  MCP_ENCRYPTION_KEY: z.string().optional(),
+  MCP_ADMIN_PASSWORD: z.string().optional(),
+  MCP_USER_STORE_PATH: z.string().optional(),
+  MCP_PUBLIC_URL: z.string().url().optional(),
 });
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {
@@ -56,16 +65,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   // TypeScript discriminated union: result.success is true here, so result.data is defined.
   const parsed = result.data;
 
-  if (
-    parsed.MODE === 'http' &&
-    (parsed.MCP_BEARER_TOKEN === undefined || parsed.MCP_BEARER_TOKEN === '')
-  ) {
-    process.stderr.write(
-      `${JSON.stringify({ event: 'config_error', missing: ['MCP_BEARER_TOKEN'] })}\n`,
-    );
-    process.exit(1);
-  }
-
   if (parsed.ODOO_MCP_LOG_FILE !== undefined) {
     const logFile = parsed.ODOO_MCP_LOG_FILE;
     try {
@@ -78,6 +77,41 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       );
       process.exit(1);
     }
+  }
+
+  // Deprecation warning: MCP_BEARER_TOKEN is no longer used for /mcp auth.
+  if (parsed.MCP_BEARER_TOKEN !== undefined && parsed.MCP_BEARER_TOKEN !== '') {
+    process.stderr.write(
+      `${JSON.stringify({
+        event: 'deprecation_warning',
+        message:
+          'MCP_BEARER_TOKEN is ignored in v0.2.1 -- OAuth is now used for /mcp authentication',
+      })}\n`,
+    );
+  }
+
+  // MODE=http: MCP_ENCRYPTION_KEY must be present and decode to exactly 32 bytes.
+  if (
+    parsed.MODE === 'http' &&
+    (parsed.MCP_ENCRYPTION_KEY === undefined ||
+      // @ts-ignore — Buffer is a Node.js global; ambient declaration above for tsc
+      Buffer.from(parsed.MCP_ENCRYPTION_KEY, 'base64').length !== 32)
+  ) {
+    process.stderr.write(
+      `${JSON.stringify({ event: 'config_error', missing: ['MCP_ENCRYPTION_KEY'] })}\n`,
+    );
+    process.exit(1);
+  }
+
+  // MODE=http: MCP_ADMIN_PASSWORD must be present and non-empty.
+  if (
+    parsed.MODE === 'http' &&
+    (parsed.MCP_ADMIN_PASSWORD === undefined || parsed.MCP_ADMIN_PASSWORD === '')
+  ) {
+    process.stderr.write(
+      `${JSON.stringify({ event: 'config_error', missing: ['MCP_ADMIN_PASSWORD'] })}\n`,
+    );
+    process.exit(1);
   }
 
   return {
@@ -93,9 +127,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       parsed.MODE === 'http'
         ? {
             port: parsed.MCP_PORT,
-            // biome-ignore lint/style/noNonNullAssertion: validated by the conditional exit guard above (MODE=http + empty token → process.exit(1))
-            bearerToken: parsed.MCP_BEARER_TOKEN!,
             trustProxy: parsed.MCP_TRUST_PROXY,
+            publicUrl: parsed.MCP_PUBLIC_URL ?? '',
+            // @ts-ignore — Buffer is a Node.js global; ambient declaration above for tsc
+            // biome-ignore lint/style/noNonNullAssertion: validated by the conditional exit guard above (MODE=http + invalid key → process.exit(1))
+            encryptionKey: Buffer.from(parsed.MCP_ENCRYPTION_KEY!, 'base64'),
+            // biome-ignore lint/style/noNonNullAssertion: validated by the conditional exit guard above (MODE=http + empty password → process.exit(1))
+            adminPassword: parsed.MCP_ADMIN_PASSWORD!,
+            userStorePath: parsed.MCP_USER_STORE_PATH ?? '/var/lib/odoo-mcp/users.json',
           }
         : undefined,
   };
