@@ -260,6 +260,28 @@ describe('admin endpoints', () => {
 
       expect(res._status).toBe(400);
     });
+
+    // F-001 [security-audit]: admin POST body must be capped at 64 KiB.
+    it('F-001: returns 413 when body exceeds 64 KiB cap', async () => {
+      const config = makeConfig();
+      const endpoints = createAdminEndpoints(config);
+
+      // 65 KiB of JSON — exceeds the 64 KiB cap.
+      const oversized = JSON.stringify({ email: 'a@b.co', filler: 'x'.repeat(65 * 1024) });
+      const req = makeMockReq({
+        method: 'POST',
+        url: '/admin/users',
+        headers: bearerHeader(),
+        body: oversized,
+      });
+      const res = makeMockRes();
+
+      await endpoints.handleAdminUsers(req, res as unknown as ServerResponse);
+
+      expect(res._status).toBe(413);
+      const body = JSON.parse(res._body) as { error: string };
+      expect(body.error).toBe('payload_too_large');
+    });
   });
 
   describe('DELETE /admin/users/:email', () => {

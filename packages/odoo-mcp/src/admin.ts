@@ -56,18 +56,34 @@ function getClientIp(req: IncomingMessage): string {
   return (req.socket as { remoteAddress?: string }).remoteAddress ?? 'unknown';
 }
 
-/** Collect full request body as a string. */
+/** 64 KiB cap on admin POST bodies (parity with /mcp and /oauth/*; US-11 AC-8). */
+const ADMIN_BODY_CAP = 64 * 1024;
+
+/**
+ * Collect full request body as a string. Rejects with `{ status: 413 }` if the
+ * accumulated byte count exceeds {@link ADMIN_BODY_CAP}.
+ */
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const chunks: string[] = [];
+    let total = 0;
+    let oversize = false;
     req.on('data', (chunk: unknown) => {
-      chunks.push(String(chunk));
+      if (oversize) return;
+      const s = String(chunk);
+      total += s.length;
+      if (total > ADMIN_BODY_CAP) {
+        oversize = true;
+        reject({ status: 413 });
+        return;
+      }
+      chunks.push(s);
     });
     req.on('end', () => {
-      resolve(chunks.join(''));
+      if (!oversize) resolve(chunks.join(''));
     });
     req.on('error', (err: unknown) => {
-      reject(err);
+      if (!oversize) reject(err);
     });
   });
 }
@@ -169,7 +185,25 @@ export function createAdminEndpoints(config: AdminConfig): AdminEndpoints {
       if (method === 'POST' && url === '/admin/users') {
         if (!checkAuth(req, res)) return;
 
-        const bodyStr = await readBody(req);
+        let bodyStr: string;
+        try {
+          bodyStr = await readBody(req);
+        } catch (err: unknown) {
+          if (
+            err !== null &&
+            typeof err === 'object' &&
+            'status' in err &&
+            (err as { status: number }).status === 413
+          ) {
+            sendJson(res, 413, { error: 'payload_too_large' });
+            return;
+          }
+          sendJson(res, 400, {
+            error: 'invalid_request',
+            error_description: 'could not read request body',
+          });
+          return;
+        }
         let parsed: unknown;
         try {
           parsed = JSON.parse(bodyStr);

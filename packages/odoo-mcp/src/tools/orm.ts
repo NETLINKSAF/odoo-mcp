@@ -109,7 +109,8 @@ async function callOrm<T extends { allowed_company_ids?: number[]; active_compan
       });
       return { content: [{ type: 'text', text: JSON.stringify(formatted) }], isError: true };
     }
-    // Non-OdooError — log + return InternalError shape (don't re-throw to MCP SDK)
+    // Non-OdooError — log raw message to stderr, return generic InternalError
+    // shape to MCP client (no internal-path / stack leakage).
     const message = e instanceof Error ? e.message : String(e);
     logger.toolCall({
       tool,
@@ -117,6 +118,7 @@ async function callOrm<T extends { allowed_company_ids?: number[]; active_compan
       latency_ms,
       status: 'error',
       error: 'InternalError',
+      error_message: message,
       user_id,
     });
     return {
@@ -125,8 +127,7 @@ async function callOrm<T extends { allowed_company_ids?: number[]; active_compan
           type: 'text',
           text: JSON.stringify({
             error_type: 'InternalError',
-            message: 'unexpected error',
-            detail: message,
+            message: 'An internal error occurred',
           }),
         },
       ],

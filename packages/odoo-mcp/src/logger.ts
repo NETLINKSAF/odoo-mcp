@@ -12,6 +12,8 @@ export interface Logger {
     latency_ms: number;
     status: 'ok' | 'error';
     error?: string;
+    /** Raw error message — server-side only, never returned to MCP client. */
+    error_message?: string;
     client_ip?: string; // HTTP mode only
     user_agent?: string; // HTTP mode only
     request_id?: string; // HTTP mode only (UUIDv4, caller-supplied)
@@ -59,6 +61,9 @@ export function createLogger(logFile?: string): Logger {
       // Omit error key entirely when undefined
       if (entry.error !== undefined) {
         obj.error = entry.error;
+      }
+      if (entry.error_message !== undefined) {
+        obj.error_message = entry.error_message;
       }
       // HTTP observability fields — omit entirely when absent
       if (entry.client_ip !== undefined) {

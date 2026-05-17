@@ -288,8 +288,8 @@ describe('odoo_run_report handler', () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error_type).toBe('InternalError');
-      expect(parsed.message).toBe('unexpected error');
-      expect(parsed.detail).toBe('connection reset');
+      expect(parsed.message).toBe('An internal error occurred');
+      expect(parsed.detail).toBeUndefined();
     });
   });
 

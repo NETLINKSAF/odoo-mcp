@@ -26,8 +26,10 @@ export function renderConsentPage(params: {
   error?: string;
   email?: string;
   formAction: string;
+  /** CSRF token to embed as hidden form field; validated against the cookie on POST. */
+  csrf_token?: string;
 }): string {
-  const { client_name, error, email, formAction } = params;
+  const { client_name, error, email, formAction, csrf_token } = params;
   const title =
     client_name != null && client_name !== ''
       ? `Authorize ${escapeHtml(client_name)}`
@@ -48,6 +50,7 @@ export function renderConsentPage(params: {
   <div class="container">
     <h1>${title}</h1>
     ${errorHtml}<form method="POST" action="${escapeHtml(formAction)}">
+      ${csrf_token != null ? `<input type="hidden" name="csrf_token" value="${escapeHtml(csrf_token)}">` : ''}
       <label for="email">Email</label>
       <input type="email" id="email" name="email" required value="${escapeHtml(email ?? '')}" autofocus>
       <label for="api_key">API Key</label>

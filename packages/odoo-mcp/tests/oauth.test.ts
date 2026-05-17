@@ -146,6 +146,52 @@ function makeConfig(overrides: Partial<OAuthHandlerConfig> = {}): OAuthHandlerCo
   };
 }
 
+/**
+ * Extract the `mcp-csrf` token from a consent-page response's Set-Cookie
+ * header. Throws if absent — callers use this only after a successful GET
+ * /oauth/authorize that we expect to have set the cookie.
+ */
+function extractCsrfToken(res: MockRes): string {
+  const cookie = res._headers['Set-Cookie'];
+  if (!cookie) throw new Error('expected Set-Cookie on consent response');
+  const match = cookie.match(/mcp-csrf=([0-9a-f]+)/);
+  if (!match) throw new Error(`expected mcp-csrf cookie, got: ${cookie}`);
+  return match[1];
+}
+
+/**
+ * Run the GET-then-POST consent flow and return the POST response. Used by
+ * tests that previously POSTed directly — the GET acquires the CSRF cookie
+ * that the POST handler now requires.
+ */
+async function postConsentForm(
+  endpoints: ReturnType<typeof createOAuthEndpoints>,
+  authorizeUrl: string,
+  formBody: string,
+): Promise<MockRes> {
+  const getRes = makeMockRes();
+  await endpoints.handleAuthorize(
+    makeMockReq({ method: 'GET', url: authorizeUrl }),
+    getRes as unknown as ServerResponse,
+  );
+  const csrf = extractCsrfToken(getRes);
+
+  const postRes = makeMockRes();
+  await endpoints.handleAuthorize(
+    makeMockReq({
+      method: 'POST',
+      url: authorizeUrl,
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        cookie: `mcp-csrf=${csrf}`,
+      },
+      body: `${formBody}&csrf_token=${csrf}`,
+    }),
+    postRes as unknown as ServerResponse,
+  );
+  return postRes;
+}
+
 // ---------------------------------------------------------------------------
 // Full OAuth dance helper.
 // ---------------------------------------------------------------------------
@@ -187,13 +233,19 @@ async function runFullDance(config: OAuthHandlerConfig): Promise<{
   const authorizeGetReq = makeMockReq({ method: 'GET', url: authorizeUrl });
   await endpoints.handleAuthorize(authorizeGetReq, authorizeGetRes as unknown as ServerResponse);
 
-  // 3. POST /oauth/authorize (consent submit).
-  const postBody = `email=alice%40example.com&api_key=secret-key-123`;
+  // Extract CSRF token from the Set-Cookie header and the rendered form.
+  const csrfToken = extractCsrfToken(authorizeGetRes);
+
+  // 3. POST /oauth/authorize (consent submit). Must replay cookie + form token.
+  const postBody = `email=alice%40example.com&api_key=secret-key-123&csrf_token=${csrfToken}`;
   const authorizePostRes = makeMockRes();
   const authorizePostReq = makeMockReq({
     method: 'POST',
     url: authorizeUrl,
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      cookie: `mcp-csrf=${csrfToken}`,
+    },
     body: postBody,
   });
   await endpoints.handleAuthorize(authorizePostReq, authorizePostRes as unknown as ServerResponse);
@@ -413,6 +465,60 @@ describe('handleRegister', () => {
     expect(body.error).toBe('rate_limited');
   });
 
+  // F-004 [security-audit]: dcrRateMap must not grow unboundedly. Verified by
+  // simulating 110 different source IPs with mocked time advancing past the
+  // 60-second rate window, then triggering the every-100-call sweep.
+  it('F-004: dcrRateMap is swept of expired entries after enough calls', async () => {
+    vi.useFakeTimers();
+    const endpoints = createOAuthEndpoints(makeConfig());
+
+    // 100 distinct IPs at t=0 — each lands an entry in dcrRateMap.
+    for (let i = 0; i < 100; i++) {
+      const res = makeMockRes();
+      const req = makeMockReq({
+        method: 'POST',
+        headers: { 'x-forwarded-for': `203.0.113.${i + 1}` },
+        body: JSON.stringify({ redirect_uris: [`https://x${i}.example.com/cb`] }),
+      });
+      await endpoints.handleRegister(req, res as unknown as ServerResponse);
+      expect(res._status).toBe(201);
+    }
+
+    // Advance past the 60s DCR rate-limit window so all stored timestamps expire.
+    vi.advanceTimersByTime(61_000);
+
+    // One more call from a fresh IP triggers the every-100-call sweep that
+    // deletes entries whose timestamps are now all expired.
+    const finalRes = makeMockRes();
+    await endpoints.handleRegister(
+      makeMockReq({
+        method: 'POST',
+        headers: { 'x-forwarded-for': '198.51.100.99' },
+        body: JSON.stringify({ redirect_uris: ['https://final.example.com/cb'] }),
+      }),
+      finalRes as unknown as ServerResponse,
+    );
+    expect(finalRes._status).toBe(201);
+
+    // Behavioural check: a previously-rate-tracked IP can now register 10 fresh
+    // clients again (would fail at 11 only if its old timestamps were still
+    // present and counted toward the cap). This proves the sweep cleared them.
+    for (let i = 0; i < 10; i++) {
+      const r = makeMockRes();
+      await endpoints.handleRegister(
+        makeMockReq({
+          method: 'POST',
+          headers: { 'x-forwarded-for': '203.0.113.1' },
+          body: JSON.stringify({ redirect_uris: [`https://re${i}.example.com/cb`] }),
+        }),
+        r as unknown as ServerResponse,
+      );
+      expect(r._status).toBe(201);
+    }
+
+    vi.useRealTimers();
+  });
+
   it('1001st client → 503', async () => {
     const endpoints = createOAuthEndpoints(makeConfig());
 
@@ -611,14 +717,11 @@ describe('handleAuthorize POST', () => {
       `/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent('https://app.example.com/cb')}` +
       `&state=s&code_challenge=${challenge}&code_challenge_method=S256`;
 
-    const res = makeMockRes();
-    const req = makeMockReq({
-      method: 'POST',
-      url: authorizeUrl,
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: 'email=notallowed%40example.com&api_key=key123',
-    });
-    await endpoints.handleAuthorize(req, res as unknown as ServerResponse);
+    const res = await postConsentForm(
+      endpoints,
+      authorizeUrl,
+      'email=notallowed%40example.com&api_key=key123',
+    );
 
     expect(res._status).toBe(403);
     expect(res._body).toContain('Access Denied');
@@ -650,14 +753,11 @@ describe('handleAuthorize POST', () => {
       `/oauth/authorize?client_id=${clientId2}&redirect_uri=${encodeURIComponent('https://app.example.com/cb')}` +
       `&state=s&code_challenge=${challenge}&code_challenge_method=S256`;
 
-    const res = makeMockRes();
-    const req = makeMockReq({
-      method: 'POST',
-      url: authorizeUrl,
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: 'email=alice%40example.com&api_key=wrongkey',
-    });
-    await endpoints3.handleAuthorize(req, res as unknown as ServerResponse);
+    const res = await postConsentForm(
+      endpoints3,
+      authorizeUrl,
+      'email=alice%40example.com&api_key=wrongkey',
+    );
 
     expect(res._status).toBe(200);
     expect(res._body).toContain('Invalid Odoo credentials');
@@ -677,14 +777,11 @@ describe('handleAuthorize POST', () => {
       `/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent('https://app.example.com/cb')}` +
       `&state=mystate&code_challenge=${challenge}&code_challenge_method=S256`;
 
-    const res = makeMockRes();
-    const req = makeMockReq({
-      method: 'POST',
-      url: authorizeUrl,
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: 'email=alice%40example.com&api_key=goodkey',
-    });
-    await endpoints.handleAuthorize(req, res as unknown as ServerResponse);
+    const res = await postConsentForm(
+      endpoints,
+      authorizeUrl,
+      'email=alice%40example.com&api_key=goodkey',
+    );
 
     expect(res._status).toBe(302);
     const location: string = res._headers['Location'] ?? '';
@@ -719,25 +816,11 @@ describe('handleAuthorize POST', () => {
 
     // Fill up to cap.
     for (let i = 0; i < 1000; i++) {
-      const res = makeMockRes();
-      const req = makeMockReq({
-        method: 'POST',
-        url: authorizeUrl,
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: `email=alice${i}%40example.com&api_key=key`,
-      });
-      await endpoints.handleAuthorize(req, res as unknown as ServerResponse);
+      await postConsentForm(endpoints, authorizeUrl, `email=alice${i}%40example.com&api_key=key`);
     }
 
     // One more should hit the cap.
-    const res = makeMockRes();
-    const req = makeMockReq({
-      method: 'POST',
-      url: authorizeUrl,
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: 'email=overflow%40example.com&api_key=key',
-    });
-    await endpoints.handleAuthorize(req, res as unknown as ServerResponse);
+    const res = await postConsentForm(endpoints, authorizeUrl, 'email=overflow%40example.com&api_key=key');
 
     expect(res._status).toBe(503);
     const body = JSON.parse(res._body) as { error: string };
@@ -818,18 +901,14 @@ describe('handleToken', () => {
     );
     const { client_id } = JSON.parse(dcrRes._body) as { client_id: string };
 
-    // Authorize POST.
+    // Authorize POST (via GET-then-POST to obtain CSRF token).
     const authorizeUrl =
       `/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&state=${state}&code_challenge=${challenge}&code_challenge_method=S256`;
-    const authRes = makeMockRes();
-    await endpoints.handleAuthorize(
-      makeMockReq({
-        method: 'POST',
-        url: authorizeUrl,
-        body: 'email=alice%40example.com&api_key=goodkey',
-      }),
-      authRes as unknown as ServerResponse,
+    const authRes = await postConsentForm(
+      endpoints,
+      authorizeUrl,
+      'email=alice%40example.com&api_key=goodkey',
     );
     const location: string = authRes._headers['Location'] ?? '';
     const codeMatch = location.match(/code=([^&]+)/);
@@ -891,11 +970,7 @@ describe('handleToken', () => {
     const authorizeUrl =
       `/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&state=s&code_challenge=${challenge}&code_challenge_method=S256`;
-    const authRes = makeMockRes();
-    await endpoints.handleAuthorize(
-      makeMockReq({ method: 'POST', url: authorizeUrl, body: 'email=a%40x.com&api_key=k' }),
-      authRes as unknown as ServerResponse,
-    );
+    const authRes = await postConsentForm(endpoints, authorizeUrl, 'email=a%40x.com&api_key=k');
     const location: string = authRes._headers['Location'] ?? '';
     const codeMatch = location.match(/code=([^&]+)/);
     const code = codeMatch ? codeMatch[1] : '';
@@ -950,11 +1025,7 @@ describe('handleToken', () => {
     const authorizeUrl =
       `/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&state=s&code_challenge=${challenge}&code_challenge_method=S256`;
-    const authRes = makeMockRes();
-    await endpoints.handleAuthorize(
-      makeMockReq({ method: 'POST', url: authorizeUrl, body: 'email=a%40x.com&api_key=k' }),
-      authRes as unknown as ServerResponse,
-    );
+    const authRes = await postConsentForm(endpoints, authorizeUrl, 'email=a%40x.com&api_key=k');
     const location: string = authRes._headers['Location'] ?? '';
     const codeMatch = location.match(/code=([^&]+)/);
     const code = codeMatch ? codeMatch[1] : '';
@@ -1062,26 +1133,20 @@ describe('T-16 threat-model: allowlist oracle (US-4 AC-6)', () => {
       `&state=s1&code_challenge=${challenge1}&code_challenge_method=S256`;
 
     // First probe: email never seen (isAllowed → false).
-    const res1 = makeMockRes();
-    const req1 = makeMockReq({
-      method: 'POST',
-      url: authorizeUrl1,
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: 'email=unknown_fresh%40example.com&api_key=somekey',
-    });
-    await endpoints.handleAuthorize(req1, res1 as unknown as ServerResponse);
+    const res1 = await postConsentForm(
+      endpoints,
+      authorizeUrl1,
+      'email=unknown_fresh%40example.com&api_key=somekey',
+    );
 
     // Case 2: same isAllowed=false but simulate "previously registered then revoked".
     // From the API perspective, both cases have isAllowed returning false —
     // the server cannot distinguish them and must return the same response.
-    const res2 = makeMockRes();
-    const req2 = makeMockReq({
-      method: 'POST',
-      url: authorizeUrl1,
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: 'email=revoked_user%40example.com&api_key=somekey',
-    });
-    await endpoints.handleAuthorize(req2, res2 as unknown as ServerResponse);
+    const res2 = await postConsentForm(
+      endpoints,
+      authorizeUrl1,
+      'email=revoked_user%40example.com&api_key=somekey',
+    );
 
     // Both must return 403.
     expect(res1._status).toBe(403);
@@ -1092,5 +1157,121 @@ describe('T-16 threat-model: allowlist oracle (US-4 AC-6)', () => {
 
     // Both must return identical headers (no timing/vary differences).
     expect(res1._headers['Content-Type']).toBe(res2._headers['Content-Type']);
+  });
+
+  // -------------------------------------------------------------------------
+  // F-003 [security-audit]: CSRF protection on consent form
+  // -------------------------------------------------------------------------
+  it('F-003: POST without cookie → 403 csrf_token mismatch', async () => {
+    const userStore = makeUserStore();
+    const probeClient = makeOdooClient();
+    vi.mocked(userStore.isAllowed).mockReturnValue(true);
+    vi.mocked(probeClient.execute).mockResolvedValue(1);
+
+    const config = makeConfig({ userStore, probeClient });
+    const endpoints = createOAuthEndpoints(config);
+
+    const dcrRes = makeMockRes();
+    await endpoints.handleRegister(
+      makeMockReq({ method: 'POST', body: JSON.stringify({ redirect_uris: ['https://app.example.com/cb'] }) }),
+      dcrRes as unknown as ServerResponse,
+    );
+    const { client_id } = JSON.parse(dcrRes._body) as { client_id: string };
+    const challenge = makeCodeChallenge(makeCodeVerifier());
+    const authorizeUrl =
+      `/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent('https://app.example.com/cb')}` +
+      `&state=s&code_challenge=${challenge}&code_challenge_method=S256`;
+
+    // POST without ever doing GET → no cookie, no form csrf_token.
+    const res = makeMockRes();
+    await endpoints.handleAuthorize(
+      makeMockReq({
+        method: 'POST',
+        url: authorizeUrl,
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'email=alice%40example.com&api_key=key',
+      }),
+      res as unknown as ServerResponse,
+    );
+
+    expect(res._status).toBe(403);
+    const body = JSON.parse(res._body) as { error_description: string };
+    expect(body.error_description).toContain('csrf_token');
+  });
+
+  it('F-003: POST with cookie but mismatched form token → 403', async () => {
+    const userStore = makeUserStore();
+    const probeClient = makeOdooClient();
+    vi.mocked(userStore.isAllowed).mockReturnValue(true);
+    vi.mocked(probeClient.execute).mockResolvedValue(1);
+
+    const config = makeConfig({ userStore, probeClient });
+    const endpoints = createOAuthEndpoints(config);
+
+    const dcrRes = makeMockRes();
+    await endpoints.handleRegister(
+      makeMockReq({ method: 'POST', body: JSON.stringify({ redirect_uris: ['https://app.example.com/cb'] }) }),
+      dcrRes as unknown as ServerResponse,
+    );
+    const { client_id } = JSON.parse(dcrRes._body) as { client_id: string };
+    const challenge = makeCodeChallenge(makeCodeVerifier());
+    const authorizeUrl =
+      `/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent('https://app.example.com/cb')}` +
+      `&state=s&code_challenge=${challenge}&code_challenge_method=S256`;
+
+    // Get a legitimate cookie via GET, then POST with a TAMPERED form token.
+    const getRes = makeMockRes();
+    await endpoints.handleAuthorize(
+      makeMockReq({ method: 'GET', url: authorizeUrl }),
+      getRes as unknown as ServerResponse,
+    );
+    const realCsrf = extractCsrfToken(getRes);
+    const fakeCsrf = 'f'.repeat(realCsrf.length);
+
+    const res = makeMockRes();
+    await endpoints.handleAuthorize(
+      makeMockReq({
+        method: 'POST',
+        url: authorizeUrl,
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          cookie: `mcp-csrf=${realCsrf}`,
+        },
+        body: `email=alice%40example.com&api_key=key&csrf_token=${fakeCsrf}`,
+      }),
+      res as unknown as ServerResponse,
+    );
+
+    expect(res._status).toBe(403);
+  });
+
+  it('F-003: GET sets HttpOnly SameSite=Strict cookie scoped to /oauth/authorize', async () => {
+    const endpoints = createOAuthEndpoints(makeConfig());
+    const dcrRes = makeMockRes();
+    await endpoints.handleRegister(
+      makeMockReq({ method: 'POST', body: JSON.stringify({ redirect_uris: ['https://app.example.com/cb'] }) }),
+      dcrRes as unknown as ServerResponse,
+    );
+    const { client_id } = JSON.parse(dcrRes._body) as { client_id: string };
+    const challenge = makeCodeChallenge(makeCodeVerifier());
+    const authorizeUrl =
+      `/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent('https://app.example.com/cb')}` +
+      `&state=s&code_challenge=${challenge}&code_challenge_method=S256`;
+
+    const res = makeMockRes();
+    await endpoints.handleAuthorize(
+      makeMockReq({ method: 'GET', url: authorizeUrl }),
+      res as unknown as ServerResponse,
+    );
+
+    expect(res._status).toBe(200);
+    const cookie = res._headers['Set-Cookie'];
+    expect(cookie).toMatch(/^mcp-csrf=[0-9a-f]{64};/);
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('SameSite=Strict');
+    expect(cookie).toContain('Path=/oauth/authorize');
+    expect(cookie).toContain('Max-Age=600');
+    // Body contains the same token as a hidden field.
+    expect(res._body).toMatch(/name="csrf_token" value="[0-9a-f]{64}"/);
   });
 });

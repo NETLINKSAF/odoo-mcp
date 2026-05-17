@@ -115,6 +115,7 @@ export function registerReportTool(
           latency_ms,
           status: 'error',
           error: 'InternalError',
+          error_message: message,
           user_id,
         });
         return {
@@ -123,8 +124,7 @@ export function registerReportTool(
               type: 'text' as const,
               text: JSON.stringify({
                 error_type: 'InternalError',
-                message: 'unexpected error',
-                detail: message,
+                message: 'An internal error occurred',
               }),
             },
           ],

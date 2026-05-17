@@ -131,6 +131,42 @@ function sendHtml(res: ServerResponse, status: number, html: string): void {
   res.end(html);
 }
 
+/** Send the consent page with a freshly-issued CSRF cookie + form token. */
+function sendConsentHtml(
+  res: ServerResponse,
+  status: number,
+  html: string,
+  csrfToken: string,
+): void {
+  const cookie = `mcp-csrf=${csrfToken}; HttpOnly; SameSite=Strict; Path=/oauth/authorize; Max-Age=600`;
+  // @ts-ignore — res methods available at runtime
+  res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Set-Cookie': cookie });
+  // @ts-ignore — res.end available at runtime
+  res.end(html);
+}
+
+/** Extract `mcp-csrf` from a Cookie header, or undefined if absent/malformed. */
+function readCsrfCookie(req: IncomingMessage): string | undefined {
+  // @ts-ignore — req.headers available at runtime
+  const raw: string | string[] | undefined = req.headers?.cookie;
+  const header = Array.isArray(raw) ? raw[0] : raw;
+  if (!header) return undefined;
+  // Cookies are `; `-separated. Token is hex so no escaping needed.
+  for (const part of header.split(';')) {
+    const [name, ...rest] = part.trim().split('=');
+    if (name === 'mcp-csrf') return rest.join('=');
+  }
+  return undefined;
+}
+
+/** Constant-time comparison of two CSRF token strings (returns false on length mismatch). */
+function csrfMatches(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  // @ts-ignore — Buffer + timingSafeEqual at runtime
+  return timingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
+}
+
 /** Compute base64url(SHA256(input)). */
 function sha256Base64url(input: string): string {
   // @ts-ignore — createHash imported above
@@ -171,6 +207,10 @@ export function createOAuthEndpoints(config: OAuthHandlerConfig): OAuthEndpoints
   const clients = new Map<string, RegisteredClient>();
   const pendingCodes = new Map<string, PendingAuthCode>();
   const dcrRateMap = new Map<string, number[]>();
+  // Counter triggers a full sweep of expired dcrRateMap entries every Nth
+  // register call. Prevents unbounded key growth under IP-rotation spam.
+  let dcrSweepCounter = 0;
+  const DCR_SWEEP_EVERY = 100;
 
   // -------------------------------------------------------------------------
   // handleMetadata — GET /.well-known/oauth-authorization-server
@@ -218,6 +258,19 @@ export function createOAuthEndpoints(config: OAuthHandlerConfig): OAuthEndpoints
     }
     timestamps.push(now);
     dcrRateMap.set(ip, timestamps);
+
+    // Opportunistic full sweep every Nth call — clears entries whose
+    // timestamps have all expired (otherwise the Map grows unboundedly under
+    // sustained IP-rotation spam).
+    dcrSweepCounter++;
+    if (dcrSweepCounter >= DCR_SWEEP_EVERY) {
+      dcrSweepCounter = 0;
+      for (const [k, v] of dcrRateMap.entries()) {
+        const fresh = v.filter((t) => now - t < DCR_RATE_WINDOW_MS);
+        if (fresh.length === 0) dcrRateMap.delete(k);
+        else if (fresh.length !== v.length) dcrRateMap.set(k, fresh);
+      }
+    }
 
     // Read and parse body.
     let bodyText: string;
@@ -360,12 +413,15 @@ export function createOAuthEndpoints(config: OAuthHandlerConfig): OAuthEndpoints
     }
 
     if (method === 'GET') {
-      // Render consent page.
+      // Render consent page with a fresh CSRF token bound to a SameSite=Strict cookie.
+      // @ts-ignore — randomBytes imported above
+      const csrfToken: string = randomBytes(32).toString('hex');
       const html = renderConsentPage({
         client_name: client.client_name,
         formAction: rawUrl,
+        csrf_token: csrfToken,
       });
-      sendHtml(res, 200, html);
+      sendConsentHtml(res, 200, html, csrfToken);
       return;
     }
 
@@ -387,6 +443,18 @@ export function createOAuthEndpoints(config: OAuthHandlerConfig): OAuthEndpoints
       const v = formData[key];
       return (Array.isArray(v) ? v[0] : v) ?? '';
     };
+
+    // CSRF protection: form `csrf_token` must equal the `mcp-csrf` cookie set by
+    // the GET handler. SameSite=Strict on the cookie prevents cross-site forgery.
+    const formCsrf = getField('csrf_token');
+    const cookieCsrf = readCsrfCookie(req);
+    if (!csrfMatches(formCsrf, cookieCsrf)) {
+      sendJson(res, 403, {
+        error: 'invalid_request',
+        error_description: 'csrf_token mismatch',
+      });
+      return;
+    }
 
     const email = getField('email').trim().toLowerCase();
     const api_key = getField('api_key');
@@ -427,14 +495,18 @@ export function createOAuthEndpoints(config: OAuthHandlerConfig): OAuthEndpoints
     }
 
     if (!uid) {
-      // Re-render consent with error — do NOT log api_key.
+      // Re-render consent with error — do NOT log api_key. Issue a fresh
+      // CSRF token so the next submit has a current cookie/form pair.
+      // @ts-ignore — randomBytes imported above
+      const csrfToken: string = randomBytes(32).toString('hex');
       const html = renderConsentPage({
         client_name: client.client_name,
         formAction: rawUrl,
         error: 'Invalid Odoo credentials',
         email,
+        csrf_token: csrfToken,
       });
-      sendHtml(res, 200, html);
+      sendConsentHtml(res, 200, html, csrfToken);
       return;
     }
 

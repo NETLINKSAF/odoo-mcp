@@ -396,8 +396,8 @@ describe('non-OdooError caught and returned as InternalError (F-005)', () => {
     expect(response.isError).toBe(true);
     const payload = JSON.parse(response.content[0].text);
     expect(payload.error_type).toBe('InternalError');
-    expect(payload.message).toBe('unexpected error');
-    expect(payload.detail).toBe('network failure');
+    expect(payload.message).toBe('An internal error occurred');
+    expect(payload.detail).toBeUndefined();
   });
 });
 
