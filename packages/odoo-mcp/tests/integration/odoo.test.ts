@@ -20,7 +20,7 @@ import path from 'node:path';
 import { loadConfig } from '../../src/config.js';
 
 import { provisionTestOdoo, type TestCredentials } from './helpers/odoo-setup.js';
-import { spawnHttpServer } from './helpers/spawn-http-server.js';
+import { obtainAccessToken, spawnHttpServer } from './helpers/spawn-http-server.js';
 import { waitForOdoo } from './helpers/wait-for-odoo.js';
 
 // ── T-18 regression: stdio config minimums ────────────────────────────────
@@ -224,20 +224,26 @@ describe('http transport', () => {
 
     try {
       // Spawn bin.js in MODE=http on a random free port.
-      const { port, bearerToken, cleanup } = await spawnHttpServer({
+      const spawned = await spawnHttpServer({
         ODOO_URL: BASE_URL,
         ODOO_DB: creds.dbName,
         ODOO_USERNAME: creds.username,
         ODOO_API_KEY: creds.apiKey,
       });
 
-      httpCleanup = cleanup;
+      httpCleanup = spawned.cleanup;
+
+      // Obtain an OAuth access token via the full PKCE dance.
+      const accessToken = await obtainAccessToken(spawned.port, spawned.adminPassword, {
+        ODOO_USERNAME: creds.username,
+        ODOO_API_KEY: creds.apiKey,
+      });
 
       const transport = new StreamableHTTPClientTransport(
-        new URL(`http://localhost:${port}/mcp`),
+        new URL(`http://localhost:${spawned.port}/mcp`),
         {
           requestInit: {
-            headers: { Authorization: `Bearer ${bearerToken}` },
+            headers: { Authorization: `Bearer ${accessToken}` },
           },
         },
       );

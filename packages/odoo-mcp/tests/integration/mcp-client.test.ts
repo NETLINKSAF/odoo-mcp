@@ -20,7 +20,11 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 import { waitForOdoo } from './helpers/wait-for-odoo.js';
 import { provisionTestOdoo, type TestCredentials } from './helpers/odoo-setup.js';
-import { spawnHttpServer, type SpawnedServer } from './helpers/spawn-http-server.js';
+import {
+  obtainAccessToken,
+  spawnHttpServer,
+  type SpawnedServer,
+} from './helpers/spawn-http-server.js';
 
 // @ts-ignore — @types/node is not installed; resolves correctly at Node.js runtime
 const __filename = fileURLToPath(import.meta.url);
@@ -132,7 +136,6 @@ describe('MCP client contract — stdio transport', () => {
 describe('MCP client contract — http transport', () => {
   // Fixed port for this suite; unlikely to conflict with other parallel tests.
   const PORT = 13001;
-  const BEARER_TOKEN = 'mcp-contract-test-token-t15!';
 
   let spawned: SpawnedServer;
   let client: Client;
@@ -145,12 +148,18 @@ describe('MCP client contract — http transport', () => {
         ODOO_USERNAME: creds.username,
         ODOO_API_KEY: creds.apiKey,
       },
-      { port: PORT, bearerToken: BEARER_TOKEN },
+      { port: PORT },
     );
+
+    // Obtain an OAuth access token via the full PKCE dance.
+    const accessToken = await obtainAccessToken(spawned.port, spawned.adminPassword, {
+      ODOO_USERNAME: creds.username,
+      ODOO_API_KEY: creds.apiKey,
+    });
 
     const transport = new StreamableHTTPClientTransport(
       new URL(`http://localhost:${spawned.port}/mcp`),
-      { requestInit: { headers: { Authorization: `Bearer ${spawned.bearerToken}` } } },
+      { requestInit: { headers: { Authorization: `Bearer ${accessToken}` } } },
     );
 
     client = new Client({ name: 'mcp-contract-http', version: '0.0.1' }, {});
@@ -173,10 +182,10 @@ describe('MCP client contract — http transport', () => {
     await assertFieldsGetReturnsData(client);
   });
 
-  it('connection with wrong bearer token is rejected (US-8 AC-5)', async () => {
+  it('connection with invalid token is rejected (US-8 AC-5)', async () => {
     const badTransport = new StreamableHTTPClientTransport(
       new URL(`http://localhost:${spawned.port}/mcp`),
-      { requestInit: { headers: { Authorization: 'Bearer wrong-token' } } },
+      { requestInit: { headers: { Authorization: 'Bearer invalid-token-not-in-store' } } },
     );
     const badClient = new Client({ name: 'bad-client', version: '0.0.1' }, {});
     await expect(badClient.connect(badTransport)).rejects.toThrow();
