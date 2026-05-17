@@ -1,5 +1,5 @@
 /**
- * Integration tests for http-transport.ts (T-04, T-17, T-18).
+ * Integration tests for http-transport.ts (T-04, T-11, T-17, T-18).
  *
  * Uses a real `startHttpTransport` instance bound to port 0 (OS-assigned),
  * with a mock McpServer and mock Logger. Exercises:
@@ -7,10 +7,13 @@
  *   - GET /health 503 (probe_ok=false)
  *   - POST /health → 405
  *   - POST /mcp no auth → 401
- *   - POST /mcp wrong token → 401 (identical body to no-auth)
+ *   - POST /mcp unknown token → 401
+ *   - POST /mcp revoked user → 401
+ *   - POST /mcp valid OAuth token → 200
  *   - GET /unknown-path with valid auth → 404
  *   - close() shuts down the listener
- *   - T-17: HSTS header, body limit, token-length warning, /health redaction,
+ *   - T-11: OAuth route dispatching, 64 KiB body limit
+ *   - T-17: HSTS header, token-length warning, /health redaction,
  *            request_id propagation, XFF validation, TLS startup warning
  *   - T-18: auth-failure rate limiting (sliding 60 s window, 20-failure threshold)
  */
@@ -75,6 +78,105 @@ function makeHealthPayload(probe_ok = true) {
     odoo_db: 'testdb',
     started_at: '2026-01-01T00:00:00.000Z',
     probe_ok,
+  };
+}
+
+/**
+ * Valid tokens accepted by the mock userStore.
+ * VALID_TOKEN resolves to { email: 'user@example.com' } and isAllowed → true.
+ */
+const VALID_TOKEN = 't11-valid-oauth-token-abc123';
+const VALID_EMAIL = 'user@example.com';
+
+/** Build a mock OAuthEndpoints with spies on all handlers. */
+function makeOAuthEndpoints() {
+  return {
+    handleMetadata: vi.fn().mockImplementation(
+      (_req: unknown, res: { writeHead: (s: number) => void; end: (b: string) => void }) => {
+        res.writeHead(200);
+        res.end('{}');
+      },
+    ),
+    handleRegister: vi.fn().mockImplementation(
+      (_req: unknown, res: { writeHead: (s: number) => void; end: (b: string) => void }) => {
+        res.writeHead(200);
+        res.end('{}');
+        return Promise.resolve();
+      },
+    ),
+    handleAuthorize: vi.fn().mockImplementation(
+      (_req: unknown, res: { writeHead: (s: number) => void; end: (b: string) => void }) => {
+        res.writeHead(200);
+        res.end('{}');
+        return Promise.resolve();
+      },
+    ),
+    handleToken: vi.fn().mockImplementation(
+      (_req: unknown, res: { writeHead: (s: number) => void; end: (b: string) => void }) => {
+        res.writeHead(200);
+        res.end('{}');
+        return Promise.resolve();
+      },
+    ),
+  };
+}
+
+/** Build a mock AdminEndpoints with a spy on handleAdminUsers. */
+function makeAdminEndpoints() {
+  return {
+    handleAdminUsers: vi.fn().mockImplementation(
+      (_req: unknown, res: { writeHead: (s: number) => void; end: (b: string) => void }) => {
+        res.writeHead(200);
+        res.end('{}');
+        return Promise.resolve();
+      },
+    ),
+  };
+}
+
+/** Build a mock UserStore. resolveToken returns email for VALID_TOKEN, null otherwise. */
+function makeUserStore(allowedEmails: string[] = [VALID_EMAIL]) {
+  return {
+    resolveToken: vi.fn().mockImplementation((token: string) => {
+      if (token === VALID_TOKEN) return { email: VALID_EMAIL };
+      return null;
+    }),
+    isAllowed: vi.fn().mockImplementation((email: string) => allowedEmails.includes(email)),
+    allow: vi.fn().mockResolvedValue(undefined),
+    revoke: vi.fn().mockResolvedValue(undefined),
+    register: vi.fn().mockResolvedValue('new-token'),
+    getCredentials: vi.fn().mockReturnValue(null),
+    revokeTokensForUser: vi.fn(),
+    listUsers: vi.fn().mockReturnValue([]),
+    load: vi.fn().mockResolvedValue(undefined),
+    flush: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+/** Build a mock ClientCache. */
+function makeClientCache() {
+  return {
+    get: vi.fn().mockReturnValue(undefined),
+    set: vi.fn(),
+    evict: vi.fn(),
+    size: vi.fn().mockReturnValue(0),
+    startSweep: vi.fn(),
+    stopSweep: vi.fn(),
+  };
+}
+
+/** Build a full HttpTransportConfig with all required mocks. */
+function makeConfig(overrides: Partial<HttpTransportConfig> = {}): HttpTransportConfig {
+  return {
+    port: 0,
+    server: { connect: mockConnect } as unknown as HttpTransportConfig['server'],
+    logger: makeLogger(),
+    healthPayload: makeHealthPayload(true),
+    oauthEndpoints: makeOAuthEndpoints(),
+    adminEndpoints: makeAdminEndpoints(),
+    userStore: makeUserStore(),
+    clientCache: makeClientCache(),
+    ...overrides,
   };
 }
 
@@ -156,25 +258,15 @@ function requestFull(
 }
 
 // ---------------------------------------------------------------------------
-// Test suite
+// Test suite — basic routing
 // ---------------------------------------------------------------------------
-
-const BEARER_TOKEN = 't04-test-secret-bearer-token';
 
 describe('startHttpTransport', () => {
   let port: number;
   let close: () => Promise<void>;
 
   beforeAll(async () => {
-    const config: HttpTransportConfig = {
-      port: 0, // OS-assigned port
-      bearerToken: BEARER_TOKEN,
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    };
-
-    const result = await startHttpTransport(config);
+    const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;
     port = addr.port;
     close = result.close;
@@ -220,11 +312,11 @@ describe('startHttpTransport', () => {
   });
 
   // -------------------------------------------------------------------------
-  // /mcp — wrong token → 401 (identical body to no-auth, per US-2 AC-9)
+  // /mcp — unknown token → 401
   // -------------------------------------------------------------------------
-  it('POST /mcp with wrong bearer token returns 401 with identical body as no-auth', async () => {
+  it('POST /mcp with unknown token returns 401 unauthorized', async () => {
     const { status, body } = await request(port, 'POST', '/mcp', {
-      Authorization: 'Bearer wrong-token-xyz',
+      Authorization: 'Bearer unknown-token-xyz',
     });
     expect(status).toBe(401);
     expect(body).toEqual({ error: 'unauthorized' });
@@ -235,10 +327,21 @@ describe('startHttpTransport', () => {
   // -------------------------------------------------------------------------
   it('POST /mcp with malformed auth (no Bearer prefix) returns 401', async () => {
     const { status, body } = await request(port, 'POST', '/mcp', {
-      Authorization: BEARER_TOKEN, // missing "Bearer " prefix
+      Authorization: VALID_TOKEN, // missing "Bearer " prefix
     });
     expect(status).toBe(401);
     expect(body).toEqual({ error: 'unauthorized' });
+  });
+
+  // -------------------------------------------------------------------------
+  // /mcp — valid OAuth token → 200
+  // -------------------------------------------------------------------------
+  it('POST /mcp with valid OAuth token returns 200', async () => {
+    const { status } = await request(port, 'POST', '/mcp', {
+      Authorization: `Bearer ${VALID_TOKEN}`,
+      'Content-Type': 'application/json',
+    });
+    expect(status).toBe(200);
   });
 
   // -------------------------------------------------------------------------
@@ -246,10 +349,124 @@ describe('startHttpTransport', () => {
   // -------------------------------------------------------------------------
   it('GET /unknown-path with valid auth returns 404 not_found', async () => {
     const { status, body } = await request(port, 'GET', '/unknown-path', {
-      Authorization: `Bearer ${BEARER_TOKEN}`,
+      Authorization: `Bearer ${VALID_TOKEN}`,
     });
     expect(status).toBe(404);
     expect(body).toEqual({ error: 'not_found' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-11: OAuth token validation scenarios
+// ---------------------------------------------------------------------------
+
+describe('T-11: OAuth token validation', () => {
+  it('returns 401 when resolveToken returns null (unknown token)', async () => {
+    const userStore = makeUserStore();
+    userStore.resolveToken.mockReturnValue(null);
+
+    const result = await startHttpTransport(makeConfig({ userStore }));
+    const addr = result.httpServer.address() as AddressInfo;
+    try {
+      const { status, body } = await request(addr.port, 'POST', '/mcp', {
+        Authorization: 'Bearer some-token',
+      });
+      expect(status).toBe(401);
+      expect(body).toEqual({ error: 'unauthorized' });
+    } finally {
+      await result.close();
+    }
+  });
+
+  it('returns 401 when resolveToken returns email but isAllowed returns false (revoked user)', async () => {
+    const userStore = makeUserStore([]);  // empty allowed list → isAllowed returns false
+    userStore.resolveToken.mockReturnValue({ email: VALID_EMAIL });
+
+    const result = await startHttpTransport(makeConfig({ userStore }));
+    const addr = result.httpServer.address() as AddressInfo;
+    try {
+      const { status, body } = await request(addr.port, 'POST', '/mcp', {
+        Authorization: `Bearer ${VALID_TOKEN}`,
+      });
+      expect(status).toBe(401);
+      expect(body).toEqual({ error: 'unauthorized' });
+    } finally {
+      await result.close();
+    }
+  });
+
+  it('returns 200 when valid OAuth token resolves and user is allowed', async () => {
+    const result = await startHttpTransport(makeConfig());
+    const addr = result.httpServer.address() as AddressInfo;
+    try {
+      const { status } = await request(addr.port, 'POST', '/mcp', {
+        Authorization: `Bearer ${VALID_TOKEN}`,
+        'Content-Type': 'application/json',
+      });
+      expect(status).toBe(200);
+    } finally {
+      await result.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-11: OAuth route dispatching
+// ---------------------------------------------------------------------------
+
+describe('T-11: OAuth and admin route dispatching', () => {
+  let port: number;
+  let close: () => Promise<void>;
+  let oauthEndpoints: ReturnType<typeof makeOAuthEndpoints>;
+  let adminEndpoints: ReturnType<typeof makeAdminEndpoints>;
+
+  beforeAll(async () => {
+    oauthEndpoints = makeOAuthEndpoints();
+    adminEndpoints = makeAdminEndpoints();
+    const result = await startHttpTransport(makeConfig({ oauthEndpoints, adminEndpoints }));
+    const addr = result.httpServer.address() as AddressInfo;
+    port = addr.port;
+    close = result.close;
+  });
+
+  afterAll(async () => {
+    await close();
+  });
+
+  it('GET /.well-known/oauth-authorization-server dispatches to oauthEndpoints.handleMetadata', async () => {
+    const { status } = await request(port, 'GET', '/.well-known/oauth-authorization-server');
+    expect(status).toBe(200);
+    expect(oauthEndpoints.handleMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it('POST /oauth/register dispatches to oauthEndpoints.handleRegister', async () => {
+    const { status } = await request(port, 'POST', '/oauth/register');
+    expect(status).toBe(200);
+    expect(oauthEndpoints.handleRegister).toHaveBeenCalledTimes(1);
+  });
+
+  it('POST /oauth/authorize dispatches to oauthEndpoints.handleAuthorize', async () => {
+    const { status } = await request(port, 'POST', '/oauth/authorize');
+    expect(status).toBe(200);
+    expect(oauthEndpoints.handleAuthorize).toHaveBeenCalledTimes(1);
+  });
+
+  it('POST /oauth/token dispatches to oauthEndpoints.handleToken', async () => {
+    const { status } = await request(port, 'POST', '/oauth/token');
+    expect(status).toBe(200);
+    expect(oauthEndpoints.handleToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('POST /admin/users dispatches to adminEndpoints.handleAdminUsers', async () => {
+    const { status } = await request(port, 'POST', '/admin/users');
+    expect(status).toBe(200);
+    expect(adminEndpoints.handleAdminUsers).toHaveBeenCalledTimes(1);
+  });
+
+  it('GET /.well-known/oauth-authorization-server does not require auth', async () => {
+    // No Authorization header — should still succeed
+    const { status } = await request(port, 'GET', '/.well-known/oauth-authorization-server');
+    expect(status).toBe(200);
   });
 });
 
@@ -261,15 +478,7 @@ describe('startHttpTransport — probe_ok=false', () => {
   let close: () => Promise<void>;
 
   beforeAll(async () => {
-    const config: HttpTransportConfig = {
-      port: 0,
-      bearerToken: BEARER_TOKEN,
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(false),
-    };
-
-    const result = await startHttpTransport(config);
+    const result = await startHttpTransport(makeConfig({ healthPayload: makeHealthPayload(false) }));
     const addr = result.httpServer.address() as AddressInfo;
     port = addr.port;
     close = result.close;
@@ -292,15 +501,7 @@ describe('startHttpTransport — probe_ok=false', () => {
 // ---------------------------------------------------------------------------
 describe('startHttpTransport — close()', () => {
   it('close() resolves and server stops accepting connections', async () => {
-    const config: HttpTransportConfig = {
-      port: 0,
-      bearerToken: BEARER_TOKEN,
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    };
-
-    const { httpServer, close } = await startHttpTransport(config);
+    const { httpServer, close } = await startHttpTransport(makeConfig());
     const addr = httpServer.address() as AddressInfo;
     const p = addr.port;
 
@@ -336,13 +537,7 @@ describe('T-17: HSTS header (US-1 AC-9)', () => {
   let close: () => Promise<void>;
 
   beforeAll(async () => {
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: 'a'.repeat(32),
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
+    const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;
     port = addr.port;
     close = result.close;
@@ -364,20 +559,13 @@ describe('T-17: HSTS header (US-1 AC-9)', () => {
   });
 });
 
-// ---- 2. 1 MB body limit ---------------------------------------------------
-describe('T-17: 1 MB body limit (US-1 AC-8)', () => {
+// ---- 2. 64 KiB body limit ---------------------------------------------------
+describe('T-11: 64 KiB body limit (US-1 AC-8 / US-11 AC-8 [threat-model])', () => {
   let port: number;
   let close: () => Promise<void>;
-  const TOKEN = 'b'.repeat(32);
 
   beforeAll(async () => {
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: TOKEN,
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
+    const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;
     port = addr.port;
     close = result.close;
@@ -385,18 +573,15 @@ describe('T-17: 1 MB body limit (US-1 AC-8)', () => {
 
   afterAll(async () => { await close(); });
 
-  it('returns 413 when Content-Length header exceeds 1 MiB', async () => {
-    // Send only the Content-Length header (no body) — the fast-path check triggers
-    // before any body bytes are read. Use Connection:close to avoid keep-alive
-    // reuse on a connection that declared a large Content-Length but sent no body.
+  it('returns 413 when Content-Length header exceeds 64 KiB', async () => {
     const { status, body } = await requestFull(
       port,
       'POST',
       '/mcp',
       {
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${VALID_TOKEN}`,
         'Content-Type': 'application/json',
-        'Content-Length': String(1_048_577),
+        'Content-Length': String(65_537),
         Connection: 'close',
       },
     );
@@ -404,15 +589,14 @@ describe('T-17: 1 MB body limit (US-1 AC-8)', () => {
     expect((body as Record<string, unknown>)['error']).toBe('payload_too_large');
   });
 
-  it('accepts a body just under 1 MiB (1 048 575 bytes)', async () => {
-    // Body just under 1 MiB — the body-limit check passes; mock handler returns 200.
-    const payload = Buffer.alloc(1_048_575, 'x');
+  it('accepts a body just under 64 KiB (65 535 bytes)', async () => {
+    const payload = Buffer.alloc(65_535, 'x');
     const { status } = await requestFull(
       port,
       'POST',
       '/mcp',
       {
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${VALID_TOKEN}`,
         'Content-Type': 'application/json',
         Connection: 'close',
       },
@@ -422,87 +606,13 @@ describe('T-17: 1 MB body limit (US-1 AC-8)', () => {
   });
 });
 
-// ---- 3. Token-length warning ----------------------------------------------
-describe('T-17: bearer token <32 char warning (US-2 AC-8)', () => {
-  it('emits a warning event to stderr when token is <32 chars', async () => {
-    const stderrLines: string[] = [];
-    const spy = vi
-      .spyOn(process.stderr, 'write')
-      .mockImplementation((data: string | Uint8Array) => {
-        stderrLines.push(typeof data === 'string' ? data : data.toString());
-        return true;
-      });
-
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: 'short', // <32 chars
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
-    await result.close();
-    spy.mockRestore();
-
-    const hasWarning = stderrLines.some((line) => {
-      try {
-        const parsed = JSON.parse(line) as Record<string, unknown>;
-        return parsed['event'] === 'warning' && String(parsed['message']).includes('32');
-      } catch {
-        return false;
-      }
-    });
-    expect(hasWarning).toBe(true);
-  });
-
-  it('does NOT emit a token-length warning when token is >=32 chars', async () => {
-    const stderrLines: string[] = [];
-    const spy = vi
-      .spyOn(process.stderr, 'write')
-      .mockImplementation((data: string | Uint8Array) => {
-        stderrLines.push(typeof data === 'string' ? data : data.toString());
-        return true;
-      });
-
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: 'c'.repeat(32), // exactly 32 chars — no warning
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
-    await result.close();
-    spy.mockRestore();
-
-    const hasWarning = stderrLines.some((line) => {
-      try {
-        const parsed = JSON.parse(line) as Record<string, unknown>;
-        return parsed['event'] === 'warning' && String(parsed['message']).includes('32');
-      } catch {
-        return false;
-      }
-    });
-    expect(hasWarning).toBe(false);
-  });
-});
-
-// ---- 4. Loopback /health redaction ----------------------------------------
+// ---- 3. Loopback /health redaction ----------------------------------------
 describe('T-17: /health loopback redaction (US-3 AC-7)', () => {
-  // Note: tests run from 127.0.0.1 → socket.remoteAddress = ::ffff:127.0.0.1
-  // which IS a loopback address. The non-loopback (redacted) code path requires
-  // a TCP connection from a non-loopback IP and is covered by integration tests.
-  // Here we verify the loopback-full-payload behavior and the isLoopbackAddress
-  // mapping via the /health response fields.
   let port: number;
   let close: () => Promise<void>;
 
   beforeAll(async () => {
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: 'd'.repeat(32),
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
+    const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;
     port = addr.port;
     close = result.close;
@@ -522,7 +632,6 @@ describe('T-17: /health loopback redaction (US-3 AC-7)', () => {
     const { status, body } = await request(port, 'GET', '/health');
     expect(status).toBe(200);
     const b = body as Record<string, unknown>;
-    // Full payload must have ok, mode, odoo_url, odoo_db, started_at, probe_ok
     expect(b['ok']).toBe(true);
     expect(b['mode']).toBe('http');
     expect(typeof b['odoo_url']).toBe('string');
@@ -532,8 +641,6 @@ describe('T-17: /health loopback redaction (US-3 AC-7)', () => {
   });
 
   it('redacts payload when loopback caller adds X-Forwarded-For (no trustProxy)', async () => {
-    // Simulates a proxy-fronted deployment without MCP_TRUST_PROXY set.
-    // The socket is loopback but the XFF header signals a proxy → safe to redact.
     const { status, body } = await request(port, 'GET', '/health', {
       'X-Forwarded-For': '8.8.8.8',
     });
@@ -552,14 +659,7 @@ describe('/health redaction with MCP_TRUST_PROXY=true (proxy-fronted)', () => {
   let close: () => Promise<void>;
 
   beforeAll(async () => {
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: 'e'.repeat(32),
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-      trustProxy: true,
-    });
+    const result = await startHttpTransport(makeConfig({ trustProxy: true }));
     const addr = result.httpServer.address() as AddressInfo;
     port = addr.port;
     close = result.close;
@@ -600,20 +700,13 @@ describe('/health redaction with MCP_TRUST_PROXY=true (proxy-fronted)', () => {
   });
 });
 
-// ---- 5. request_id propagation --------------------------------------------
+// ---- 4. request_id propagation --------------------------------------------
 describe('T-17: request_id UUIDv4 propagation (US-4 AC-7)', () => {
   let port: number;
   let close: () => Promise<void>;
-  const TOKEN = 'e'.repeat(32);
 
   beforeAll(async () => {
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: TOKEN,
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
+    const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;
     port = addr.port;
     close = result.close;
@@ -631,7 +724,7 @@ describe('T-17: request_id UUIDv4 propagation (US-4 AC-7)', () => {
       });
 
     await requestFull(port, 'POST', '/mcp', {
-      Authorization: `Bearer ${TOKEN}`,
+      Authorization: `Bearer ${VALID_TOKEN}`,
       'Content-Type': 'application/json',
     });
 
@@ -679,19 +772,13 @@ describe('T-17: request_id UUIDv4 propagation (US-4 AC-7)', () => {
   });
 });
 
-// ---- 6. XFF character validation ------------------------------------------
+// ---- 5. XFF character validation ------------------------------------------
 describe('T-17: XFF character validation (US-4 AC-8)', () => {
   let port: number;
   let close: () => Promise<void>;
 
   beforeAll(async () => {
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: 'f'.repeat(32),
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
+    const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;
     port = addr.port;
     close = result.close;
@@ -733,7 +820,6 @@ describe('T-17: XFF character validation (US-4 AC-8)', () => {
         return true;
       });
 
-    // Parentheses are outside the safe set [0-9a-fA-F.:, ] and pass Node header validation
     await requestFull(port, 'GET', '/health', {
       'X-Forwarded-For': '10.0.0.1(evil)',
     });
@@ -776,7 +862,7 @@ describe('T-17: XFF character validation (US-4 AC-8)', () => {
   });
 });
 
-// ---- 7. TLS startup warning -----------------------------------------------
+// ---- 6. TLS startup warning -----------------------------------------------
 describe('T-17: TLS startup warning (US-1 AC-10)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -795,16 +881,7 @@ describe('T-17: TLS startup warning (US-1 AC-10)', () => {
         return true;
       });
 
-    // Start server — fake timers are active, so the 60 s setTimeout is deferred.
-    // The listen() call uses a real I/O callback; awaiting the promise works
-    // because Node resolves the listen callback before fake timers run.
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: 'g'.repeat(32),
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
+    const result = await startHttpTransport(makeConfig());
 
     // No https request sent — advance 60 s to trigger the warning
     await vi.advanceTimersByTimeAsync(60_001);
@@ -833,23 +910,14 @@ describe('T-17: TLS startup warning (US-1 AC-10)', () => {
         return true;
       });
 
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: 'h'.repeat(32),
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
+    const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;
 
     // Send a real https-proxied request (sets tlsSeen = true).
-    // Temporarily restore real timers so the HTTP request can complete.
     vi.useRealTimers();
     await requestFull(addr.port, 'GET', '/health', {
       'X-Forwarded-Proto': 'https',
     });
-    // Re-install fake timers; the existing 60 s timer from startHttpTransport
-    // was registered while fake timers were active, so its handle is still fake.
     vi.useFakeTimers();
 
     // Advance past the 60 s window — warning should NOT fire because tlsSeen=true
@@ -881,17 +949,10 @@ describe('auth failure rate limit', () => {
   // Each test uses a dedicated server instance to get a fresh rate-limit state.
   // The authFailures Map is module-level, keyed by IP. We use unique IPs per
   // test to avoid cross-test contamination without needing module reloads.
-  const RATE_TOKEN = 'i'.repeat(32);
 
   // Helper: spin up a fresh server, run fn, then close.
   async function withServer(fn: (port: number) => Promise<void>): Promise<void> {
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: RATE_TOKEN,
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
+    const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;
     try {
       await fn(addr.port);
@@ -931,7 +992,6 @@ describe('auth failure rate limit', () => {
   });
 
   it('resets rate limit after the 60 s window slides (via fake system time)', async () => {
-    // Use fake timers to control Date.now() without waiting 60 real seconds.
     vi.useFakeTimers();
     const t0 = Date.now();
     try {
@@ -974,10 +1034,7 @@ describe('auth failure rate limit', () => {
 // ---------------------------------------------------------------------------
 
 describe('session limit (F-003)', () => {
-  const TOKEN = 'j'.repeat(32);
-
   // Override MockTransport so each instance gets a unique sessionId.
-  // This is required because the session map only grows when sessionId !== undefined.
   let sessionCounter = 0;
 
   beforeEach(() => {
@@ -1006,7 +1063,6 @@ describe('session limit (F-003)', () => {
   });
 
   afterEach(() => {
-    // Restore the original mock implementation for other tests
     vi.mocked(StreamableHTTPServerTransport).mockImplementation(() => ({
       sessionId: undefined as string | undefined,
       onclose: undefined as (() => void) | undefined,
@@ -1027,19 +1083,13 @@ describe('session limit (F-003)', () => {
   /** Send a new-session POST (no Mcp-Session-Id header). */
   function newSession(port: number): Promise<{ status: number; body: unknown }> {
     return requestFull(port, 'POST', '/mcp', {
-      Authorization: `Bearer ${TOKEN}`,
+      Authorization: `Bearer ${VALID_TOKEN}`,
       'Content-Type': 'application/json',
     });
   }
 
   it('returns 503 too_many_sessions when MAX_SESSIONS sessions exist', async () => {
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: TOKEN,
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
+    const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;
     const port = addr.port;
 
@@ -1059,7 +1109,6 @@ describe('session limit (F-003)', () => {
   });
 
   it('allows a new session after an existing session closes', async () => {
-    // Use a small mock that exposes the onclose callback so we can trigger it
     const transports: Array<{ sessionId: string | undefined; onclose: (() => void) | undefined; close: () => Promise<void> }> = [];
 
     vi.mocked(StreamableHTTPServerTransport).mockImplementation(() => {
@@ -1085,13 +1134,7 @@ describe('session limit (F-003)', () => {
       return obj;
     });
 
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: TOKEN,
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
+    const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;
     const port = addr.port;
 
@@ -1125,16 +1168,8 @@ describe('session limit (F-003)', () => {
 // ---------------------------------------------------------------------------
 
 describe('authFailures map bounds (F-004)', () => {
-  const TOKEN = 'k'.repeat(32);
-
   async function withBoundsServer(fn: (port: number) => Promise<void>): Promise<void> {
-    const result = await startHttpTransport({
-      port: 0,
-      bearerToken: TOKEN,
-      server: { connect: mockConnect } as unknown as Parameters<typeof startHttpTransport>[0]['server'],
-      logger: makeLogger(),
-      healthPayload: makeHealthPayload(true),
-    });
+    const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;
     try {
       await fn(addr.port);
@@ -1165,11 +1200,6 @@ describe('authFailures map bounds (F-004)', () => {
         // Advance fake timers by 5 min + 1 ms to trigger the sweep
         await vi.advanceTimersByTimeAsync(5 * 60_000 + 1);
 
-        // The IPs can now fail again freely (sweep cleared them);
-        // if they were still present and the 60 s window had aged out, isAuthRateLimited
-        // would return false on the next access — but we verify the sweep ran by
-        // confirming the entries are gone (only 1 failure each, never blocked anyway).
-        // The observable effect: after 61 more failures the new IP is blocked as expected.
         for (let i = 0; i < 20; i++) {
           await badAuthFrom(port, '10.1.0.3');
         }
@@ -1182,18 +1212,12 @@ describe('authFailures map bounds (F-004)', () => {
   });
 
   it('evicts oldest 25% when Map size exceeds AUTH_FAILURE_MAP_CAP', async () => {
-    // Fill the map to just above the cap using unique IPs, then verify size stays bounded.
-    // We use fake system time so all entries share the same timestamp and none age out.
     vi.useFakeTimers();
     try {
       await withBoundsServer(async (port) => {
         const cap = _AUTH_FAILURE_MAP_CAP;
 
-        // Generate cap + 1 unique IPs. The (cap+1)-th insert must trigger eviction.
-        // Each unique IP generates 1 failure, so the map would grow to cap+1 without the guard.
-        // With the guard, inserting the (cap+1)-th new IP evicts 25% before adding.
         for (let i = 0; i < cap + 1; i++) {
-          // Build a unique IP per iteration
           const a = Math.floor(i / 65536) % 256;
           const b = Math.floor(i / 256) % 256;
           const c = i % 256;
@@ -1201,14 +1225,9 @@ describe('authFailures map bounds (F-004)', () => {
           await badAuthFrom(port, ip);
         }
 
-        // After cap+1 inserts with the eviction guard, the map size must be <= cap.
-        // We can't inspect the module-private map directly, but we verify the server
-        // is still healthy (no crash, health still responds 200).
         const { status } = await requestFull(port, 'GET', '/health');
         expect(status).toBe(200);
 
-        // The key assertion: the server must not have OOM'd or crashed.
-        // Additionally verify that a brand-new IP is still rate-limitable (logic intact).
         for (let i = 0; i < 20; i++) {
           await badAuthFrom(port, '203.0.113.99');
         }

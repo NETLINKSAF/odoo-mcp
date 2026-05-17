@@ -1,9 +1,14 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { createAdminEndpoints } from './admin.js';
+import { createClientCache } from './client-cache.js';
 import { loadConfig } from './config.js';
+import { createEncryptionService } from './encryption.js';
 import { startHttpTransport } from './http-transport.js';
+import { createOAuthEndpoints } from './oauth.js';
 import { createOdooMcpServer } from './server.js';
 import type { HealthPayload } from './types.js';
+import { createUserStore } from './user-store.js';
 
 // Minimal ambient declaration — avoids @types/node dependency.
 // Includes process.on so SIGTERM/SIGINT handlers can be registered.
@@ -25,7 +30,7 @@ const STARTUP_TIMEOUT_MS = 30_000;
     // 2. Wire all subsystems together — race against the startup timeout.
     //    If createOdooMcpServer hangs (e.g. Odoo unreachable), the timeout
     //    fires and the process exits with startup_error / code 1 (NFR-3).
-    const { server, logger, probeOk } = await Promise.race([
+    const { server, logger, probeOk, probeClient } = await Promise.race([
       createOdooMcpServer({
         odooConfig: config.odoo,
         logFile: config.logFile,
@@ -61,15 +66,49 @@ const STARTUP_TIMEOUT_MS = 30_000;
         started_at: new Date().toISOString(),
         probe_ok: probeOk,
       };
+      // biome-ignore lint/style/noNonNullAssertion: config.http guaranteed defined when mode='http' (validated in loadConfig)
+      const httpCfg = config.http!;
+      const encryptionService = createEncryptionService(
+        httpCfg.encryptionKey as unknown as Parameters<typeof createEncryptionService>[0],
+      );
+      const userStore = createUserStore({
+        filePath: httpCfg.userStorePath,
+        encryptionKey: httpCfg.encryptionKey as unknown as Parameters<
+          typeof createUserStore
+        >[0]['encryptionKey'],
+        odooUrl: config.odoo.url,
+        odooDb: config.odoo.db,
+      });
+      await userStore.load();
+      const clientCache = createClientCache({
+        maxSize: 100,
+        idleTtlMs: 30 * 60_000,
+        sweepIntervalMs: 5 * 60_000,
+      });
+      clientCache.startSweep();
+      const oauthEndpoints = createOAuthEndpoints({
+        publicUrl: httpCfg.publicUrl,
+        port: httpCfg.port,
+        odooDb: config.odoo.db,
+        userStore,
+        probeClient,
+        encryptionService,
+      });
+      const adminEndpoints = createAdminEndpoints({
+        adminPassword: httpCfg.adminPassword,
+        userStore,
+        clientCache,
+      });
       const { close } = await startHttpTransport({
-        // biome-ignore lint/style/noNonNullAssertion: config.http guaranteed defined when mode='http' (validated in loadConfig)
-        port: config.http!.port,
-        bearerToken: '',
-        // biome-ignore lint/style/noNonNullAssertion: config.http guaranteed defined when mode='http' (validated in loadConfig)
-        trustProxy: config.http!.trustProxy,
+        port: httpCfg.port,
+        trustProxy: httpCfg.trustProxy,
         server,
         logger,
         healthPayload,
+        oauthEndpoints,
+        adminEndpoints,
+        userStore,
+        clientCache,
       });
       closeTransport = close;
     }

@@ -1002,3 +1002,95 @@ describe('handleToken', () => {
     expect(body.error).toBe('unsupported_media_type');
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-16 threat-model additions
+// ---------------------------------------------------------------------------
+
+describe('T-16 threat-model: redirect URI scheme allowlist (US-2 AC-6)', () => {
+  it('http://external.example.com/cb → 400 with exact "redirect_uris must use https or loopback" message', async () => {
+    const endpoints = createOAuthEndpoints(makeConfig());
+    const res = makeMockRes();
+    const req = makeMockReq({
+      method: 'POST',
+      body: JSON.stringify({ redirect_uris: ['http://external.example.com/cb'] }),
+    });
+    await endpoints.handleRegister(req, res as unknown as ServerResponse);
+    expect(res._status).toBe(400);
+    const body = JSON.parse(res._body) as { error_description: string };
+    expect(body.error_description).toBe('redirect_uris must use https or loopback');
+  });
+
+  it('https://external.example.com/cb → 201 (HTTPS always allowed)', async () => {
+    const endpoints = createOAuthEndpoints(makeConfig());
+    const res = makeMockRes();
+    const req = makeMockReq({
+      method: 'POST',
+      body: JSON.stringify({ redirect_uris: ['https://external.example.com/cb'] }),
+    });
+    await endpoints.handleRegister(req, res as unknown as ServerResponse);
+    expect(res._status).toBe(201);
+  });
+});
+
+describe('T-16 threat-model: allowlist oracle (US-4 AC-6)', () => {
+  // The threat: an attacker can probe whether an email is "known but blocked"
+  // vs "never seen" if the responses differ. Both MUST return identical 403
+  // response body and same status.
+  it('email never seen vs email currently-rejected both return identical 403 bodies', async () => {
+    const userStore = makeUserStore();
+
+    // Case 1: email never submitted before — isAllowed returns false (fresh email).
+    vi.mocked(userStore.isAllowed).mockReturnValue(false);
+    const config = makeConfig({ userStore });
+    const endpoints = createOAuthEndpoints(config);
+
+    const dcrRes1 = makeMockRes();
+    await endpoints.handleRegister(
+      makeMockReq({
+        method: 'POST',
+        body: JSON.stringify({ redirect_uris: ['https://app.example.com/cb'] }),
+      }),
+      dcrRes1 as unknown as ServerResponse,
+    );
+    const { client_id: cid1 } = JSON.parse(dcrRes1._body) as { client_id: string };
+
+    const verifier1 = makeCodeVerifier();
+    const challenge1 = makeCodeChallenge(verifier1);
+    const authorizeUrl1 =
+      `/oauth/authorize?client_id=${cid1}&redirect_uri=${encodeURIComponent('https://app.example.com/cb')}` +
+      `&state=s1&code_challenge=${challenge1}&code_challenge_method=S256`;
+
+    // First probe: email never seen (isAllowed → false).
+    const res1 = makeMockRes();
+    const req1 = makeMockReq({
+      method: 'POST',
+      url: authorizeUrl1,
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'email=unknown_fresh%40example.com&api_key=somekey',
+    });
+    await endpoints.handleAuthorize(req1, res1 as unknown as ServerResponse);
+
+    // Case 2: same isAllowed=false but simulate "previously registered then revoked".
+    // From the API perspective, both cases have isAllowed returning false —
+    // the server cannot distinguish them and must return the same response.
+    const res2 = makeMockRes();
+    const req2 = makeMockReq({
+      method: 'POST',
+      url: authorizeUrl1,
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'email=revoked_user%40example.com&api_key=somekey',
+    });
+    await endpoints.handleAuthorize(req2, res2 as unknown as ServerResponse);
+
+    // Both must return 403.
+    expect(res1._status).toBe(403);
+    expect(res2._status).toBe(403);
+
+    // Both must return identical body content (same HTML).
+    expect(res1._body).toBe(res2._body);
+
+    // Both must return identical headers (no timing/vary differences).
+    expect(res1._headers['Content-Type']).toBe(res2._headers['Content-Type']);
+  });
+});

@@ -1,15 +1,20 @@
 // @ts-ignore — @types/node not installed; AsyncLocalStorage available in Node 12+
 import { AsyncLocalStorage } from 'node:async_hooks';
 // @ts-ignore
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 // @ts-ignore — @types/node not installed; resolves correctly at Node.js runtime
 import { createServer } from 'node:http';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
+import type { AdminEndpoints } from './admin.js';
+import type { ClientCache } from './client-cache.js';
 import type { Logger } from './logger.js';
+import type { OAuthEndpoints } from './oauth.js';
 import type { HealthPayload } from './types.js';
+import type { RequestContext } from './types.js';
+import type { UserStore } from './user-store.js';
 
 // ---------------------------------------------------------------------------
 // Minimal ambient declarations — avoids @types/node dependency.
@@ -74,7 +79,6 @@ export type HttpServer = any;
 
 export interface HttpTransportConfig {
   port: number;
-  bearerToken: string;
   server: McpServer;
   logger: Logger;
   healthPayload: HealthPayload;
@@ -86,13 +90,10 @@ export interface HttpTransportConfig {
    * unspoofable behavior for direct deployments.
    */
   trustProxy?: boolean;
-}
-
-/** Per-request metadata extracted by the HTTP handler. */
-interface RequestContext {
-  client_ip: string;
-  user_agent: string;
-  request_id: string;
+  oauthEndpoints: OAuthEndpoints;
+  adminEndpoints: AdminEndpoints;
+  userStore: UserStore;
+  clientCache: ClientCache;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +139,7 @@ export function getRequestContext(
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_BODY_BYTES = 1_048_576; // 1 MiB
+const MAX_BODY_BYTES = 65_536; // 64 KiB body limit (US-1 AC-8 / US-11 AC-8 [threat-model])
 
 /** Maximum number of concurrent MCP sessions (F-003). */
 export const _MAX_SESSIONS = 100;
@@ -160,35 +161,6 @@ const SESSION_SWEEP_INTERVAL_MS = 5 * 60_000; // 5 minutes
 
 /** Sessions idle longer than this are closed (ms). */
 const SESSION_IDLE_TIMEOUT_MS = 30 * 60_000; // 30 minutes
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Constant-time bearer token verification (US-2 AC-4).
- *
- * Pads both buffers to the same length before calling `timingSafeEqual` so
- * the comparison time does not leak whether the lengths differ. The explicit
- * `a.length === b.length` guard ensures we still return `false` on length
- * mismatch — a padded comparison alone would return `true` for same-prefix
- * tokens of different lengths.
- */
-function verifyBearer(authHeader: string | undefined, expected: string): boolean {
-  if (!authHeader?.startsWith('Bearer ')) return false;
-  const provided = authHeader.slice(7);
-  // @ts-ignore — Buffer is a Node.js global; ambient declaration above for tsc
-  const a: BufferLike = Buffer.from(provided, 'utf8');
-  // @ts-ignore
-  const b: BufferLike = Buffer.from(expected, 'utf8');
-  const maxLen = Math.max(a.length, b.length);
-  // @ts-ignore
-  const bufA: BufferLike = Buffer.concat([a, Buffer.alloc(maxLen - a.length)]);
-  // @ts-ignore
-  const bufB: BufferLike = Buffer.concat([b, Buffer.alloc(maxLen - b.length)]);
-  // @ts-ignore — timingSafeEqual imported with @ts-ignore; accepts Buffer-like args
-  return a.length === b.length && timingSafeEqual(bufA, bufB);
-}
 
 // ---------------------------------------------------------------------------
 // Auth-failure rate limiting (US-2 AC-10, HIGH severity per threat model)
@@ -369,7 +341,7 @@ function logRequest(
 }
 
 /**
- * Read and buffer the full request body, enforcing the 1 MiB size limit.
+ * Read and buffer the full request body, enforcing the 64 KiB size limit.
  * Returns the raw body buffer or throws { status: 413 } when the limit
  * is exceeded via Content-Length or streaming.
  *
@@ -415,15 +387,17 @@ function readBody(req: NodeIncomingMessage): Promise<BufferLike> {
 /**
  * Starts an HTTP server that:
  * - Serves `GET /health` (unauthenticated)
+ * - Dispatches OAuth discovery/flow routes to oauthEndpoints (no auth)
+ * - Dispatches admin routes to adminEndpoints (admin-password auth inside)
  * - Proxies `POST/GET/DELETE /mcp` to per-session `StreamableHTTPServerTransport`
  * - Rejects all other paths with 404
- * - Requires a valid `Authorization: Bearer <token>` header on all non-health routes
+ * - Requires a valid OAuth access token on /mcp routes
  *
- * Security hardening (T-17):
+ * Security hardening (T-17, T-11):
  * - HSTS header on all responses when X-Forwarded-Proto: https (US-1 AC-9)
  * - TLS detection startup warning if no https traffic within 60s (US-1 AC-10)
- * - 1 MiB body limit with 413 (US-1 AC-8)
- * - Bearer token length warning at startup (US-2 AC-8)
+ * - 64 KiB body limit with 413 (US-1 AC-8 / US-11 AC-8 [threat-model])
+ * - OAuth token resolution via UserStore (US-11)
  * - Loopback-only odoo_url/odoo_db in /health (US-3 AC-7)
  * - request_id UUIDv4 per /mcp request via WeakMap + ALS (US-4 AC-7)
  * - XFF character validation (US-4 AC-8)
@@ -434,18 +408,6 @@ function readBody(req: NodeIncomingMessage): Promise<BufferLike> {
 export async function startHttpTransport(
   config: HttpTransportConfig,
 ): Promise<{ httpServer: HttpServer; close: () => Promise<void> }> {
-  // -------------------------------------------------------------------------
-  // Bearer token length warning (US-2 AC-8)
-  // -------------------------------------------------------------------------
-  if (config.bearerToken.length < 32) {
-    process.stderr.write(
-      `${JSON.stringify({
-        event: 'warning',
-        message: 'MCP_BEARER_TOKEN is fewer than 32 characters — use `openssl rand -hex 32`',
-      })}\n`,
-    );
-  }
-
   /** Active MCP sessions keyed by session ID. */
   const sessions = new Map<string, StreamableHTTPServerTransport>();
 
@@ -547,6 +509,46 @@ export async function startHttpTransport(
         }
 
         // ----------------------------------------------------------------
+        // Route: /.well-known/oauth-authorization-server — no auth required
+        // ----------------------------------------------------------------
+        if (path === '/.well-known/oauth-authorization-server') {
+          config.oauthEndpoints.handleMetadata(req, res);
+          logRequest(
+            method,
+            path,
+            200,
+            startedAt,
+            extractClientIp(req),
+            String(req.headers['user-agent'] ?? ''),
+          );
+          return;
+        }
+
+        // ----------------------------------------------------------------
+        // Route: /oauth/* — oauth endpoints handle their own rate limiting and validation
+        // ----------------------------------------------------------------
+        if (path === '/oauth/register') {
+          await config.oauthEndpoints.handleRegister(req, res);
+          return;
+        }
+        if (path === '/oauth/authorize') {
+          await config.oauthEndpoints.handleAuthorize(req, res);
+          return;
+        }
+        if (path === '/oauth/token') {
+          await config.oauthEndpoints.handleToken(req, res);
+          return;
+        }
+
+        // ----------------------------------------------------------------
+        // Route: /admin/* — admin endpoints handle their own auth and rate limiting
+        // ----------------------------------------------------------------
+        if (path.startsWith('/admin/')) {
+          await config.adminEndpoints.handleAdminUsers(req, res);
+          return;
+        }
+
+        // ----------------------------------------------------------------
         // Auth-failure rate limit (US-2 AC-10) — checked BEFORE auth so a
         // banned IP doesn't get to verify a new token attempt.
         // ----------------------------------------------------------------
@@ -565,11 +567,12 @@ export async function startHttpTransport(
         }
 
         // ----------------------------------------------------------------
-        // Bearer auth for all non-health routes (US-2 AC-9)
+        // OAuth token auth for all non-health, non-oauth, non-admin routes (US-11)
         // ----------------------------------------------------------------
         const authHeader = req.headers.authorization;
         const authStr = Array.isArray(authHeader) ? authHeader[0] : authHeader;
-        if (!verifyBearer(authStr, config.bearerToken)) {
+        const rawToken = authStr?.startsWith('Bearer ') ? authStr.slice(7) : undefined;
+        if (!rawToken) {
           recordAuthFailure(clientIpForRate);
           logRequest(
             method,
@@ -582,6 +585,21 @@ export async function startHttpTransport(
           jsonResponse(res, 401, { error: 'unauthorized' });
           return;
         }
+        const tokenResult = config.userStore.resolveToken(rawToken);
+        if (!tokenResult || !config.userStore.isAllowed(tokenResult.email)) {
+          recordAuthFailure(clientIpForRate);
+          logRequest(
+            method,
+            path,
+            401,
+            startedAt,
+            clientIpForRate,
+            String(req.headers['user-agent'] ?? ''),
+          );
+          jsonResponse(res, 401, { error: 'unauthorized' });
+          return;
+        }
+        const { email } = tokenResult;
 
         // ----------------------------------------------------------------
         // Route: /mcp
@@ -598,7 +616,7 @@ export async function startHttpTransport(
           const sessionId = Array.isArray(sessionIdHeader) ? sessionIdHeader[0] : sessionIdHeader;
 
           // ------------------------------------------------------------------
-          // 1 MiB body limit (US-1 AC-8) — read and buffer before routing
+          // 64 KiB body limit (US-1 AC-8 / US-11 AC-8 [threat-model]) — read and buffer before routing
           // ------------------------------------------------------------------
           let body: BufferLike;
           try {
@@ -668,7 +686,13 @@ export async function startHttpTransport(
           }
 
           // Attach per-request context for downstream consumption via WeakMap
-          const ctx: RequestContext = { client_ip, user_agent, request_id };
+          const ctx: RequestContext = {
+            client_ip,
+            user_agent,
+            request_id,
+            user_id: email,
+            odoo_credentials_handle: email,
+          };
           requestContextMap.set(transport, ctx);
 
           logRequest(method, path, 200, startedAt, client_ip, user_agent, request_id);
