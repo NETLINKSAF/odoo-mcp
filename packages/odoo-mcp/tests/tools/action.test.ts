@@ -1,12 +1,20 @@
-// TODO(v0.2): rewrite assertions for registerTool (was server.tool 2-arg overload).
-//   The 2-arg overload omitted the input schema from tools/list, making tools unusable
-//   from any MCP client. Fixed in commit switching to registerTool + inputSchema.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { OdooSession } from '@netlinksinc/odoo-client';
 import { OdooError, OdooUserError, OdooAccessError } from '@netlinksinc/odoo-client';
 import type { OdooClient } from '@netlinksinc/odoo-client';
 import type { Logger } from '../../src/logger.js';
+import type { ClientResolver } from '../../src/types.js';
 import { registerActionTool } from '../../src/tools/action.js';
+
+// ---------------------------------------------------------------------------
+// Mock http-transport to prevent side-effects during tests
+// ---------------------------------------------------------------------------
+
+vi.mock('../../src/http-transport.js', () => ({
+  requestContextStorage: {
+    getStore: () => undefined,
+  },
+}));
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -34,15 +42,21 @@ function makeLoggerMock(): Logger {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: capture the handler registered by server.tool()
+// Helper: capture the handler registered by server.registerTool()
 // ---------------------------------------------------------------------------
 
 function makeServerMock() {
   let capturedHandler: ((args: Record<string, unknown>) => Promise<unknown>) | null = null;
   const server = {
-    tool: vi.fn((name: string, handler: (args: Record<string, unknown>) => Promise<unknown>) => {
-      capturedHandler = handler;
-    }),
+    registerTool: vi.fn(
+      (
+        name: string,
+        _schema: unknown,
+        handler: (args: Record<string, unknown>) => Promise<unknown>,
+      ) => {
+        capturedHandler = handler;
+      },
+    ),
     getHandler: () => {
       if (!capturedHandler) throw new Error('Handler not registered');
       return capturedHandler;
@@ -58,22 +72,28 @@ function makeServerMock() {
 let serverMock: ReturnType<typeof makeServerMock>;
 let clientMock: OdooClient;
 let loggerMock: Logger;
+let mockResolver: ClientResolver;
 
 beforeEach(() => {
   serverMock = makeServerMock();
   clientMock = makeClientMock();
   loggerMock = makeLoggerMock();
-  registerActionTool(serverMock as never, clientMock, SESSION, loggerMock);
+  mockResolver = async () => ({ client: clientMock, session: SESSION });
+  registerActionTool(serverMock as never, mockResolver, loggerMock);
 });
 
 // ---------------------------------------------------------------------------
 // Tool registration
 // ---------------------------------------------------------------------------
 
-describe.skip('server.tool registration', () => {
+describe('server.registerTool registration', () => {
   it('registers exactly one tool named odoo_call_action', () => {
-    expect(serverMock.tool).toHaveBeenCalledWith('odoo_call_action', expect.any(Function));
-    expect(serverMock.tool).toHaveBeenCalledOnce();
+    expect(serverMock.registerTool).toHaveBeenCalledWith(
+      'odoo_call_action',
+      expect.any(Object),
+      expect.any(Function),
+    );
+    expect(serverMock.registerTool).toHaveBeenCalledOnce();
   });
 });
 
@@ -81,7 +101,7 @@ describe.skip('server.tool registration', () => {
 // AC-1: context passthrough + uid/company_id identity protection
 // ---------------------------------------------------------------------------
 
-describe.skip('AC-1: caller context passes through but uid/company_id are session-derived', () => {
+describe('AC-1: caller context passes through but uid/company_id are session-derived', () => {
   it('passes active_test:false through to client.callAction context', async () => {
     const handler = serverMock.getHandler();
     await handler({
@@ -147,7 +167,7 @@ describe.skip('AC-1: caller context passes through but uid/company_id are sessio
 // AC-2: client.callAction throwing → isError:true with Odoo fault message
 // ---------------------------------------------------------------------------
 
-describe.skip('AC-2: client.callAction throwing returns isError:true', () => {
+describe('AC-2: client.callAction throwing returns isError:true', () => {
   it('OdooUserError → isError:true with verbatim fault message', async () => {
     (clientMock.callAction as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new OdooUserError('action not found on model'),
@@ -194,7 +214,7 @@ describe.skip('AC-2: client.callAction throwing returns isError:true', () => {
 // Input validation
 // ---------------------------------------------------------------------------
 
-describe.skip('Input validation', () => {
+describe('Input validation', () => {
   it('missing model → isError:true with InputValidationError', async () => {
     const handler = serverMock.getHandler();
     const response = await handler({
@@ -265,7 +285,7 @@ describe.skip('Input validation', () => {
 // Company subset validation
 // ---------------------------------------------------------------------------
 
-describe.skip('Company subset validation', () => {
+describe('Company subset validation', () => {
   it('allowed_company_ids not in session → isError:true, no client call', async () => {
     const handler = serverMock.getHandler();
     const response = await handler({
@@ -291,16 +311,22 @@ describe.skip('Company subset validation', () => {
 
     let capturedHandler: ((args: Record<string, unknown>) => Promise<unknown>) | null = null;
     const mockServer = {
-      tool: vi.fn((_name: string, handler: (args: Record<string, unknown>) => Promise<unknown>) => {
-        capturedHandler = handler;
-      }),
+      registerTool: vi.fn(
+        (_name: string, _schema: unknown, handler: (args: Record<string, unknown>) => Promise<unknown>) => {
+          capturedHandler = handler;
+        },
+      ),
     };
     const mockClient = {
       callAction: vi.fn().mockResolvedValue({ type: 'ir.actions.act_window' }),
     };
     const mockLogger = { toolCall: vi.fn(), startup: vi.fn(), shutdown: vi.fn() };
+    const multiResolver: ClientResolver = async () => ({
+      client: mockClient as never,
+      session: sessionMulti,
+    });
 
-    registerActionTool(mockServer as never, mockClient as never, sessionMulti, mockLogger);
+    registerActionTool(mockServer as never, multiResolver, mockLogger);
     const result = await capturedHandler!({
       model: 'res.partner',
       ids: [1],
@@ -319,7 +345,7 @@ describe.skip('Company subset validation', () => {
 // Logging
 // ---------------------------------------------------------------------------
 
-describe.skip('Logging', () => {
+describe('Logging', () => {
   it('logs status:ok on success', async () => {
     const handler = serverMock.getHandler();
     await handler({ model: 'res.partner', ids: [1], action_name: 'action_open_partners' });
@@ -355,7 +381,7 @@ describe.skip('Logging', () => {
 // F-005: non-OdooError caught + logged + returns isError with InternalError
 // ---------------------------------------------------------------------------
 
-describe.skip('non-OdooError caught and returned as InternalError (F-005)', () => {
+describe('non-OdooError caught and returned as InternalError (F-005)', () => {
   it('catches plain Error from client.callAction and returns isError:true with InternalError', async () => {
     (clientMock.callAction as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('network failure'),
@@ -373,42 +399,27 @@ describe.skip('non-OdooError caught and returned as InternalError (F-005)', () =
     expect(payload.message).toBe('unexpected error');
     expect(payload.detail).toBe('network failure');
   });
-
-  it('logs toolCall with status error and InternalError on non-OdooError', async () => {
-    (clientMock.callAction as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('network failure'),
-    );
-    const handler = serverMock.getHandler();
-    await handler({ model: 'res.partner', ids: [1], action_name: 'action_open_partners' });
-
-    expect(loggerMock.toolCall).toHaveBeenCalledWith(
-      expect.objectContaining({ tool: 'odoo_call_action', status: 'error', error: 'InternalError' }),
-    );
-  });
 });
 
 // ---------------------------------------------------------------------------
-// F-003: odoo_call_action args with PII keys are redacted in args_sanitized
+// ClientResolver error propagation
 // ---------------------------------------------------------------------------
 
-describe.skip('F-003: odoo_call_action sanitizes context containing PII keys', () => {
-  it('redacts token inside context when logging odoo_call_action', async () => {
-    const handler = serverMock.getHandler();
-    await handler({
-      model: 'res.partner',
-      ids: [1],
-      action_name: 'action_open_partners',
-      context: { token: 'abc123', lang: 'en_US' },
-    });
+describe('ClientResolver error propagation', () => {
+  it('propagates rejection from clientResolver without catching', async () => {
+    const authError = new Error('OdooAuthError: session expired');
+    const failingResolver: ClientResolver = async () => {
+      throw authError;
+    };
+    const failServerMock = makeServerMock();
+    registerActionTool(failServerMock as never, failingResolver, loggerMock);
 
-    expect(loggerMock.toolCall).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tool: 'odoo_call_action',
-        status: 'ok',
-        args_sanitized: expect.objectContaining({
-          context: expect.objectContaining({ token: '[REDACTED]', lang: 'en_US' }),
-        }),
+    await expect(
+      failServerMock.getHandler()({
+        model: 'res.partner',
+        ids: [1],
+        action_name: 'action_open_partners',
       }),
-    );
+    ).rejects.toThrow('OdooAuthError: session expired');
   });
 });

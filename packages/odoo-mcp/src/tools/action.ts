@@ -5,12 +5,28 @@ import type { OdooClient } from '@netlinksinc/odoo-client';
 import { buildContext, validateCompanySubset } from '../context.js';
 import { formatMcpError } from '../errors.js';
 import type { Logger } from '../logger.js';
+import type { ClientResolver, RequestContext } from '../types.js';
 import { callActionSchema } from './schemas.js';
+
+/** Structural type for AsyncLocalStorage — avoids @types/node dependency. */
+type AsyncLocalStorageLike<T> = { getStore(): T | undefined };
+
+/** Retrieve the user_id from AsyncLocalStorage context set by HTTP transport (T-11). */
+async function getUserId(): Promise<string | undefined> {
+  try {
+    // Lazy access — http-transport.ts exports requestContextStorage in T-11
+    const httpTransport = (await import('../http-transport.js')) as unknown as {
+      requestContextStorage?: AsyncLocalStorageLike<RequestContext>;
+    };
+    return httpTransport.requestContextStorage?.getStore()?.user_id;
+  } catch {
+    return undefined;
+  }
+}
 
 export function registerActionTool(
   server: McpServer,
-  client: OdooClient,
-  session: OdooSession,
+  clientResolver: ClientResolver,
   logger: Logger,
 ): void {
   server.registerTool(
@@ -21,28 +37,61 @@ export function registerActionTool(
       inputSchema: callActionSchema.shape,
     },
     async (args) => {
+      const { client, session } = await clientResolver();
+      const user_id = await getUserId();
       const t0 = Date.now();
       const rawArgs = args as unknown as Record<string, unknown>;
+
+      // Validate args — defensive, in addition to SDK-level validation.
+      const parseResult = callActionSchema.safeParse(args);
+      if (!parseResult.success) {
+        const message = parseResult.error.issues.map((i) => i.message).join('; ');
+        logger.toolCall({
+          tool: 'odoo_call_action',
+          args_sanitized: sanitizeArgs('odoo_call_action', rawArgs),
+          latency_ms: Date.now() - t0,
+          status: 'error',
+          error: 'InputValidationError',
+          user_id,
+        });
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ error_type: 'InputValidationError', message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const parsed = parseResult.data;
       try {
-        if (args.allowed_company_ids) {
-          validateCompanySubset(args.allowed_company_ids, session.allowedCompanyIds);
+        if (parsed.allowed_company_ids) {
+          validateCompanySubset(parsed.allowed_company_ids, session.allowedCompanyIds);
         }
         // buildContext re-applies session-authoritative fields AFTER extraContext
         // so caller-supplied context cannot override identity (US-5 AC-4 + US-7 AC-7).
         const context = buildContext(
           session,
           {
-            allowed_company_ids: args.allowed_company_ids,
-            active_company_id: args.active_company_id,
+            allowed_company_ids: parsed.allowed_company_ids,
+            active_company_id: parsed.active_company_id,
           },
-          args.context,
+          parsed.context,
         );
-        const result = await client.callAction(args.model, args.ids, args.action_name, context);
+        const result = await client.callAction(
+          parsed.model,
+          parsed.ids,
+          parsed.action_name,
+          context,
+        );
         logger.toolCall({
           tool: 'odoo_call_action',
           args_sanitized: sanitizeArgs('odoo_call_action', rawArgs),
           latency_ms: Date.now() - t0,
           status: 'ok',
+          user_id,
         });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
@@ -58,6 +107,7 @@ export function registerActionTool(
             latency_ms,
             status: 'error',
             error: formatted.error_type,
+            user_id,
           });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(formatted) }],
@@ -71,6 +121,7 @@ export function registerActionTool(
           latency_ms,
           status: 'error',
           error: 'InternalError',
+          user_id,
         });
         return {
           content: [

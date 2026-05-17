@@ -1,10 +1,15 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type Context, OdooError, type OdooSession, sanitizeArgs } from '@netlinksinc/odoo-client';
 import type { OdooClient } from '@netlinksinc/odoo-client';
+import type { ZodError } from 'zod';
 
 import { buildContext, validateCompanySubset } from '../context.js';
 import { formatMcpError } from '../errors.js';
 import type { Logger } from '../logger.js';
+import type { ClientResolver, RequestContext } from '../types.js';
+
+/** Structural type for AsyncLocalStorage — avoids @types/node dependency. */
+type AsyncLocalStorageLike<T> = { getStore(): T | undefined };
 import {
   createSchema,
   readSchema,
@@ -19,13 +24,57 @@ type ToolResult = {
   isError: boolean;
 };
 
+/** Retrieve the user_id from AsyncLocalStorage context set by HTTP transport (T-11). */
+async function getUserId(): Promise<string | undefined> {
+  try {
+    // Lazy access — http-transport.ts exports requestContextStorage in T-11
+    const httpTransport = (await import('../http-transport.js')) as unknown as {
+      requestContextStorage?: AsyncLocalStorageLike<RequestContext>;
+    };
+    return httpTransport.requestContextStorage?.getStore()?.user_id;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Format a ZodError as an InputValidationError tool result. */
+function zodErrorResult(
+  tool: string,
+  err: ZodError,
+  logger: Logger,
+  t0: number,
+  rawArgs: Record<string, unknown>,
+  user_id: string | undefined,
+): ToolResult {
+  const message = err.issues.map((i) => i.message).join('; ');
+  logger.toolCall({
+    tool,
+    args_sanitized: sanitizeArgs(tool, rawArgs),
+    latency_ms: Date.now() - t0,
+    status: 'error',
+    error: 'InputValidationError',
+    user_id,
+  });
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({ error_type: 'InputValidationError', message }),
+      },
+    ],
+    isError: true,
+  };
+}
+
 /** Shape every tool handler funnels through after SDK-level Zod parsing. */
 async function callOrm<T extends { allowed_company_ids?: number[]; active_company_id?: number }>(
   tool: string,
   args: T,
   exec: (parsed: T, context: Context) => Promise<unknown>,
   logger: Logger,
+  client: OdooClient,
   session: OdooSession,
+  user_id: string | undefined,
 ): Promise<ToolResult> {
   const t0 = Date.now();
   const rawArgs = args as unknown as Record<string, unknown>;
@@ -43,6 +92,7 @@ async function callOrm<T extends { allowed_company_ids?: number[]; active_compan
       args_sanitized: sanitizeArgs(tool, rawArgs),
       latency_ms: Date.now() - t0,
       status: 'ok',
+      user_id,
     });
     return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false };
   } catch (e) {
@@ -55,6 +105,7 @@ async function callOrm<T extends { allowed_company_ids?: number[]; active_compan
         latency_ms,
         status: 'error',
         error: formatted.error_type,
+        user_id,
       });
       return { content: [{ type: 'text', text: JSON.stringify(formatted) }], isError: true };
     }
@@ -66,6 +117,7 @@ async function callOrm<T extends { allowed_company_ids?: number[]; active_compan
       latency_ms,
       status: 'error',
       error: 'InternalError',
+      user_id,
     });
     return {
       content: [
@@ -93,8 +145,7 @@ async function callOrm<T extends { allowed_company_ids?: number[]; active_compan
  */
 export function registerOrmTools(
   server: McpServer,
-  client: OdooClient,
-  session: OdooSession,
+  clientResolver: ClientResolver,
   logger: Logger,
 ): void {
   server.registerTool(
@@ -104,10 +155,17 @@ export function registerOrmTools(
         'Search and read records in one call. Returns matching rows up to `limit` (default 80).',
       inputSchema: searchReadSchema.shape,
     },
-    async (args) =>
-      callOrm(
+    async (args) => {
+      const { client, session } = await clientResolver();
+      const user_id = await getUserId();
+      const t0 = Date.now();
+      const rawArgs = args as unknown as Record<string, unknown>;
+      const parseResult = searchReadSchema.safeParse(args);
+      if (!parseResult.success)
+        return zodErrorResult('odoo_search_read', parseResult.error, logger, t0, rawArgs, user_id);
+      return callOrm(
         'odoo_search_read',
-        args,
+        parseResult.data,
         (parsed, context) =>
           client.searchRead(parsed.model, parsed.domain as never[], parsed.fields, {
             limit: parsed.limit,
@@ -116,8 +174,11 @@ export function registerOrmTools(
             context,
           }),
         logger,
+        client,
         session,
-      ),
+        user_id,
+      );
+    },
   );
 
   server.registerTool(
@@ -126,14 +187,24 @@ export function registerOrmTools(
       description: 'Read specific record IDs from a model. Returns one row per ID.',
       inputSchema: readSchema.shape,
     },
-    async (args) =>
-      callOrm(
+    async (args) => {
+      const { client, session } = await clientResolver();
+      const user_id = await getUserId();
+      const t0 = Date.now();
+      const rawArgs = args as unknown as Record<string, unknown>;
+      const parseResult = readSchema.safeParse(args);
+      if (!parseResult.success)
+        return zodErrorResult('odoo_read', parseResult.error, logger, t0, rawArgs, user_id);
+      return callOrm(
         'odoo_read',
-        args,
+        parseResult.data,
         (parsed, context) => client.read(parsed.model, parsed.ids, parsed.fields, context),
         logger,
+        client,
         session,
-      ),
+        user_id,
+      );
+    },
   );
 
   server.registerTool(
@@ -143,10 +214,17 @@ export function registerOrmTools(
         'Create one or many records. `values` may be a single dict or an array of dicts.',
       inputSchema: createSchema.shape,
     },
-    async (args) =>
-      callOrm(
+    async (args) => {
+      const { client, session } = await clientResolver();
+      const user_id = await getUserId();
+      const t0 = Date.now();
+      const rawArgs = args as unknown as Record<string, unknown>;
+      const parseResult = createSchema.safeParse(args);
+      if (!parseResult.success)
+        return zodErrorResult('odoo_create', parseResult.error, logger, t0, rawArgs, user_id);
+      return callOrm(
         'odoo_create',
-        args,
+        parseResult.data,
         (parsed, context) =>
           client.create(
             parsed.model,
@@ -154,8 +232,11 @@ export function registerOrmTools(
             context,
           ),
         logger,
+        client,
         session,
-      ),
+        user_id,
+      );
+    },
   );
 
   server.registerTool(
@@ -164,14 +245,24 @@ export function registerOrmTools(
       description: 'Update existing records. Applies `values` to every record in `ids`.',
       inputSchema: writeSchema.shape,
     },
-    async (args) =>
-      callOrm(
+    async (args) => {
+      const { client, session } = await clientResolver();
+      const user_id = await getUserId();
+      const t0 = Date.now();
+      const rawArgs = args as unknown as Record<string, unknown>;
+      const parseResult = writeSchema.safeParse(args);
+      if (!parseResult.success)
+        return zodErrorResult('odoo_write', parseResult.error, logger, t0, rawArgs, user_id);
+      return callOrm(
         'odoo_write',
-        args,
+        parseResult.data,
         (parsed, context) => client.write(parsed.model, parsed.ids, parsed.values, context),
         logger,
+        client,
         session,
-      ),
+        user_id,
+      );
+    },
   );
 
   server.registerTool(
@@ -180,14 +271,24 @@ export function registerOrmTools(
       description: 'Delete records. Returns true on success.',
       inputSchema: unlinkSchema.shape,
     },
-    async (args) =>
-      callOrm(
+    async (args) => {
+      const { client, session } = await clientResolver();
+      const user_id = await getUserId();
+      const t0 = Date.now();
+      const rawArgs = args as unknown as Record<string, unknown>;
+      const parseResult = unlinkSchema.safeParse(args);
+      if (!parseResult.success)
+        return zodErrorResult('odoo_unlink', parseResult.error, logger, t0, rawArgs, user_id);
+      return callOrm(
         'odoo_unlink',
-        args,
+        parseResult.data,
         (parsed, context) => client.unlink(parsed.model, parsed.ids, context),
         logger,
+        client,
         session,
-      ),
+        user_id,
+      );
+    },
   );
 
   server.registerTool(
@@ -196,13 +297,23 @@ export function registerOrmTools(
       description: 'Count records matching the domain. Returns an integer.',
       inputSchema: searchCountSchema.shape,
     },
-    async (args) =>
-      callOrm(
+    async (args) => {
+      const { client, session } = await clientResolver();
+      const user_id = await getUserId();
+      const t0 = Date.now();
+      const rawArgs = args as unknown as Record<string, unknown>;
+      const parseResult = searchCountSchema.safeParse(args);
+      if (!parseResult.success)
+        return zodErrorResult('odoo_search_count', parseResult.error, logger, t0, rawArgs, user_id);
+      return callOrm(
         'odoo_search_count',
-        args,
+        parseResult.data,
         (parsed, context) => client.searchCount(parsed.model, parsed.domain as never[], context),
         logger,
+        client,
         session,
-      ),
+        user_id,
+      );
+    },
   );
 }

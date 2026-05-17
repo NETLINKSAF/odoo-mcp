@@ -1,10 +1,18 @@
-// TODO(v0.2): rewrite assertions for registerTool (was server.tool 2-arg overload).
-//   The 2-arg overload omitted the input schema from tools/list, making tools unusable
-//   from any MCP client. Fixed in commit switching to registerTool + inputSchema.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OdooUserError, OdooAccessError, OdooError } from '@netlinksinc/odoo-client';
 import type { OdooSession } from '@netlinksinc/odoo-client';
+import type { ClientResolver } from '../../src/types.js';
 import { registerReportTool } from '../../src/tools/report.js';
+
+// ---------------------------------------------------------------------------
+// Mock http-transport to prevent side-effects during tests
+// ---------------------------------------------------------------------------
+
+vi.mock('../../src/http-transport.js', () => ({
+  requestContextStorage: {
+    getStore: () => undefined,
+  },
+}));
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -21,12 +29,12 @@ const SESSION: OdooSession = {
 // Helpers to build mocks
 // ---------------------------------------------------------------------------
 
-function buildMocks() {
-  // Capture the handler registered with server.tool
+function buildMocks(session: OdooSession = SESSION) {
+  // Capture the handler registered with server.registerTool
   let capturedHandler: ((args: unknown) => Promise<unknown>) | null = null;
 
   const mockServer = {
-    tool: vi.fn((name: string, handler: (args: unknown) => Promise<unknown>) => {
+    registerTool: vi.fn((_name: string, _schema: unknown, handler: (args: unknown) => Promise<unknown>) => {
       capturedHandler = handler;
     }),
   };
@@ -44,29 +52,35 @@ function buildMocks() {
     shutdown: vi.fn(),
   };
 
+  const mockResolver: ClientResolver = async () => ({ client: mockClient as never, session });
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerReportTool(mockServer as any, mockClient as any, SESSION, mockLogger);
+  registerReportTool(mockServer as any, mockResolver, mockLogger);
 
   const callHandler = (args: unknown) => {
     if (!capturedHandler) throw new Error('Handler not registered');
     return capturedHandler(args);
   };
 
-  return { mockServer, mockClient, mockLogger, callHandler };
+  return { mockServer, mockClient, mockLogger, mockResolver, callHandler };
 }
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe.skip('registerReportTool', () => {
+describe('registerReportTool', () => {
   it('registers the tool named odoo_run_report', () => {
     const { mockServer } = buildMocks();
-    expect(mockServer.tool).toHaveBeenCalledWith('odoo_run_report', expect.any(Function));
+    expect(mockServer.registerTool).toHaveBeenCalledWith(
+      'odoo_run_report',
+      expect.any(Object),
+      expect.any(Function),
+    );
   });
 });
 
-describe.skip('odoo_run_report handler', () => {
+describe('odoo_run_report handler', () => {
   describe('AC-1: valid args → calls client.runReport and returns content+contentType', () => {
     it('calls client.runReport with correct positional args', async () => {
       const { mockClient, callHandler } = buildMocks();
@@ -198,20 +212,8 @@ describe.skip('odoo_run_report handler', () => {
         userContext: {},
       };
 
-      let capturedHandler: ((args: unknown) => Promise<unknown>) | null = null;
-      const mockServer = {
-        tool: vi.fn((_name: string, handler: (args: unknown) => Promise<unknown>) => {
-          capturedHandler = handler;
-        }),
-      };
-      const mockClient = {
-        runReport: vi.fn().mockResolvedValue({ content: 'abc', contentType: 'application/pdf' }),
-      };
-      const mockLogger = { toolCall: vi.fn(), startup: vi.fn(), shutdown: vi.fn() };
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      registerReportTool(mockServer as any, mockClient as any, sessionMulti, mockLogger);
-      const result = await capturedHandler!({ report_id: 1, doc_ids: [1], allowed_company_ids: [2] }) as {
+      const { mockClient, callHandler } = buildMocks(sessionMulti);
+      const result = await callHandler({ report_id: 1, doc_ids: [1], allowed_company_ids: [2] }) as {
         isError: boolean;
       };
 
@@ -289,15 +291,24 @@ describe.skip('odoo_run_report handler', () => {
       expect(parsed.message).toBe('unexpected error');
       expect(parsed.detail).toBe('connection reset');
     });
+  });
 
-    it('logs toolCall with status error and InternalError on non-OdooError', async () => {
-      const { mockClient, mockLogger, callHandler } = buildMocks();
-      mockClient.runReport.mockRejectedValueOnce(new TypeError('connection reset'));
+  describe('ClientResolver error propagation', () => {
+    it('propagates rejection from clientResolver without catching', async () => {
+      const authError = new Error('OdooAuthError: session expired');
+      let capturedHandler: ((args: unknown) => Promise<unknown>) | null = null;
+      const mockServer = {
+        registerTool: vi.fn((_name: string, _schema: unknown, handler: (args: unknown) => Promise<unknown>) => {
+          capturedHandler = handler;
+        }),
+      };
+      const mockLogger = { toolCall: vi.fn(), startup: vi.fn(), shutdown: vi.fn() };
+      const failingResolver: ClientResolver = async () => { throw authError; };
 
-      await callHandler({ report_id: 1, doc_ids: [1] });
+      registerReportTool(mockServer as never, failingResolver, mockLogger);
 
-      expect(mockLogger.toolCall).toHaveBeenCalledWith(
-        expect.objectContaining({ tool: 'odoo_run_report', status: 'error', error: 'InternalError' }),
+      await expect(capturedHandler!({ report_id: 1, doc_ids: [1] })).rejects.toThrow(
+        'OdooAuthError: session expired',
       );
     });
   });
