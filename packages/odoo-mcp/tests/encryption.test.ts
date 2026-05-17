@@ -116,4 +116,32 @@ describe('EncryptionService — blob length math', () => {
 		const decoded = Buffer.from(blob, 'base64');
 		expect(decoded.length).toBe(12 + 16);
 	});
+
+	// T-15: blob length formula — explicit AC-1/5 coverage
+	it('T-15: blob length formula holds for "hello" (5 ASCII bytes)', () => {
+		const key = randomBytes(32) as unknown as Buffer;
+		const service = createEncryptionService(key as unknown as Parameters<typeof createEncryptionService>[0]);
+		const plaintext = 'hello';
+		const blob = service.encrypt(plaintext);
+		const decoded = Buffer.from(blob, 'base64');
+		const expectedLen = 12 + Buffer.byteLength(plaintext, 'utf8') + 16;
+		expect(decoded.length).toBe(expectedLen);
+	});
+
+	it('T-15: blob length formula holds for 500-char repeated multi-byte UTF-8 ("中文")', () => {
+		const key = randomBytes(32) as unknown as Buffer;
+		const service = createEncryptionService(key as unknown as Parameters<typeof createEncryptionService>[0]);
+		const plaintext = '中文'.repeat(250); // 500 chars, each '中' and '文' are 3 bytes → 1500 UTF-8 bytes
+		const blob = service.encrypt(plaintext);
+		const decoded = Buffer.from(blob, 'base64');
+		const expectedLen = 12 + Buffer.byteLength(plaintext, 'utf8') + 16;
+		expect(decoded.length).toBe(expectedLen);
+	});
+
+	it('T-15: empty string round-trip — encrypt("") then decrypt returns ""', () => {
+		const key = randomBytes(32) as unknown as Buffer;
+		const service = createEncryptionService(key as unknown as Parameters<typeof createEncryptionService>[0]);
+		const blob = service.encrypt('');
+		expect(service.decrypt(blob)).toBe('');
+	});
 });

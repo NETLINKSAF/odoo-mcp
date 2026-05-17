@@ -382,6 +382,74 @@ describe('listUsers', () => {
 });
 
 // ---------------------------------------------------------------------------
+// T-15: Three concurrent flush() calls serialize — no file corruption.
+// ---------------------------------------------------------------------------
+describe('T-15: concurrent flush serialization', () => {
+  it('three rapid allow() calls all land on disk with final state intact', async () => {
+    const { store, dir, filePath } = await makeTmpStore();
+
+    // Trigger 3 rapid mutations and await all of them in parallel.
+    await Promise.all([
+      store.allow('a@x.com'),
+      store.allow('b@x.com'),
+      store.allow('c@x.com'),
+    ]);
+
+    // All mutations must be reflected in-memory.
+    expect(store.isAllowed('a@x.com')).toBe(true);
+    expect(store.isAllowed('b@x.com')).toBe(true);
+    expect(store.isAllowed('c@x.com')).toBe(true);
+
+    // The on-disk file must contain all 3 users — serialization queue must not corrupt.
+    const { readFile } = await import('node:fs/promises');
+    const content = await readFile(filePath, 'utf8');
+    const data = JSON.parse(content);
+    const emails: string[] = data.users.map((u: { email: string }) => u.email);
+    expect(emails).toContain('a@x.com');
+    expect(emails).toContain('b@x.com');
+    expect(emails).toContain('c@x.com');
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-15: 11th register() on disk — first token hash absent, exactly 10 records.
+// ---------------------------------------------------------------------------
+describe('T-15: token cap verified on disk', () => {
+  it('11th register() results in exactly 10 token records on disk, first hash absent', async () => {
+    const { store, dir, filePath } = await makeTmpStore();
+    await store.allow('carol2@example.com');
+
+    const tokens: string[] = [];
+    for (let i = 0; i < 11; i++) {
+      tokens.push(await store.register('carol2@example.com', `key-${i}`));
+    }
+
+    // flush is called by register(), so the file should be up to date.
+    const { readFile, createHash: _ch } = await import('node:fs/promises').then(async (m) => ({
+      readFile: m.readFile,
+      // We need createHash separately from node:crypto
+      createHash: undefined,
+    }));
+    const { createHash } = await import('node:crypto');
+
+    const content = await readFile(filePath, 'utf8');
+    const data = JSON.parse(content);
+
+    // Exactly 10 token records.
+    expect(data.tokens.length).toBe(10);
+
+    // The first token's hash must not be present.
+    const firstHash = createHash('sha256').update(tokens[0]!).digest('hex');
+    const hashes: string[] = data.tokens.map((t: { token_hash: string }) => t.token_hash);
+    expect(hashes).not.toContain(firstHash);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // revokeTokensForUser.
 // ---------------------------------------------------------------------------
 describe('revokeTokensForUser', () => {

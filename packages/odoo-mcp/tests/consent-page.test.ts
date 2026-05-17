@@ -76,4 +76,45 @@ describe('renderErrorPage', () => {
     expect(html).toContain('<h1>Error</h1>');
     expect(html).toContain('<p>Something went wrong</p>');
   });
+
+  // T-15: US-3 AC-16 — XSS in renderErrorPage title and message
+  it('T-15: renderErrorPage with <script> in title — escaped, no raw <script> tag', () => {
+    const html = renderErrorPage({ title: 'Bad <script>', message: 'safe message' });
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).not.toMatch(/<script>/);
+  });
+
+  it('T-15: renderErrorPage with <img onerror> in message — escaped, no raw <img tag', () => {
+    const html = renderErrorPage({
+      title: 'Error',
+      message: '<img src=x onerror=alert(1)>',
+    });
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).not.toMatch(/<img/);
+  });
+
+  it('T-15: renderErrorPage escapes both title and message with combined XSS payloads', () => {
+    const html = renderErrorPage({
+      title: 'Bad <script>',
+      message: '<img src=x onerror=alert(1)>',
+    });
+    // Title must be escaped.
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).not.toMatch(/<script>/);
+    // Message must be escaped.
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).not.toMatch(/<img/);
+  });
+});
+
+// T-15: renderConsentPage formAction escaping — explicit spec requirement
+describe('T-15: renderConsentPage — formAction HTML attribute escaping', () => {
+  it('& and " in formAction are escaped in the action attribute', () => {
+    const formAction = '/oauth/authorize?state=a&b="quote"';
+    const html = renderConsentPage({ formAction });
+    // Must contain escaped version.
+    expect(html).toContain('action="/oauth/authorize?state=a&amp;b=&quot;quote&quot;"');
+    // Must NOT contain raw & inside the attribute value.
+    expect(html).not.toContain('action="/oauth/authorize?state=a&b=');
+  });
 });

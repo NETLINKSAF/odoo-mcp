@@ -10,16 +10,94 @@
  * Covers: US-7 AC-2, AC-3, AC-4, AC-5, AC-6, AC-7
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import path from 'node:path';
 
+import { loadConfig } from '../../src/config.js';
+
 import { provisionTestOdoo, type TestCredentials } from './helpers/odoo-setup.js';
 import { spawnHttpServer } from './helpers/spawn-http-server.js';
 import { waitForOdoo } from './helpers/wait-for-odoo.js';
+
+// ── T-18 regression: stdio config minimums ────────────────────────────────
+//
+// These tests run regardless of whether ODOO_URL is set.  They verify that
+// MCP_ENCRYPTION_KEY and MCP_ADMIN_PASSWORD are NOT required when MODE=stdio,
+// confirming that the OAuth additions did not break the original stdio UX.
+
+describe('regression: stdio config minimums', () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    // Prevent real process.exit; throw so we can assert it was NOT called.
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code) => {
+      throw new Error(`unexpected process.exit(${code})`);
+    }) as never);
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('loadConfig succeeds with MODE=stdio when MCP_ENCRYPTION_KEY is unset', () => {
+    const env: Record<string, string | undefined> = {
+      ODOO_URL: 'https://erp.example.com',
+      ODOO_DB: 'testdb',
+      ODOO_USERNAME: 'admin',
+      ODOO_API_KEY: 'test-key',
+      MODE: 'stdio',
+      // MCP_ENCRYPTION_KEY intentionally absent
+      // MCP_ADMIN_PASSWORD intentionally absent
+    };
+
+    // Must NOT throw and must NOT call process.exit
+    const config = loadConfig(env);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(config.mode).toBe('stdio');
+    expect(config.http).toBeUndefined();
+  });
+
+  it('loadConfig succeeds with MODE=stdio when MCP_ADMIN_PASSWORD is unset', () => {
+    const env: Record<string, string | undefined> = {
+      ODOO_URL: 'https://erp.example.com',
+      ODOO_DB: 'testdb',
+      ODOO_USERNAME: 'admin',
+      ODOO_API_KEY: 'test-key',
+      MODE: 'stdio',
+      // MCP_ADMIN_PASSWORD intentionally absent
+    };
+
+    const config = loadConfig(env);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(config.mode).toBe('stdio');
+  });
+
+  it('ODOO_USERNAME and ODOO_API_KEY remain the only credentials needed for stdio mode', () => {
+    // Provide exactly the minimal set: ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_API_KEY
+    // No MCP_ENCRYPTION_KEY, no MCP_ADMIN_PASSWORD, no MODE (defaults to stdio).
+    const minimalEnv: Record<string, string | undefined> = {
+      ODOO_URL: 'https://erp.example.com',
+      ODOO_DB: 'testdb',
+      ODOO_USERNAME: 'admin',
+      ODOO_API_KEY: 'test-key',
+    };
+
+    const config = loadConfig(minimalEnv);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(config.mode).toBe('stdio');
+    expect(config.odoo.username).toBe('admin');
+    expect(config.odoo.apiKey).toBe('test-key');
+  });
+});
 
 // ── Constants ──────────────────────────────────────────────────────────────
 

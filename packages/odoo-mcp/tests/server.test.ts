@@ -243,6 +243,26 @@ describe('createOdooMcpServer', () => {
     expect(resolved.session).toEqual(fakeSession);
   });
 
+  // T-18 — stdio mode singleton resolver returns the SAME {client, session} pair on repeated calls
+  it('stdio mode singleton resolver returns the same {client,session} pair on repeated calls', async () => {
+    const fakeSession = { uid: 1, db: 'testdb', apiKey: 'test-key-do-not-leak' };
+    vi.mocked(OdooClient).mockImplementation(() => ({
+      authenticate: vi.fn().mockResolvedValue(fakeSession),
+    }));
+
+    await createOdooMcpServer({ odooConfig: ODOO_CONFIG });
+
+    // Capture the resolver forwarded to registerAllTools
+    const [, resolver] = vi.mocked(registerAllTools).mock.calls[0]!;
+
+    // Call twice — both must return the exact same object references (singleton)
+    const first = await resolver();
+    const second = await resolver();
+
+    expect(first.client).toBe(second.client);
+    expect(first.session).toBe(second.session);
+  });
+
   // Test 12 (NEW) — with clientResolver provided, that resolver is forwarded verbatim
   it('with clientResolver provided, that resolver is used', async () => {
     const mockResolver: ClientResolver = vi.fn().mockResolvedValue({

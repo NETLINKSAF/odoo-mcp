@@ -185,6 +185,48 @@ describe('idle sweep eviction', () => {
 });
 
 // ---------------------------------------------------------------------------
+// T-15: get() extends effective TTL — entry survives past original expiry
+// ---------------------------------------------------------------------------
+
+describe('T-15: get() extends TTL via lastUsedAt refresh', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		cache = createClientCache({ maxSize: 10, idleTtlMs: 1_000, sweepIntervalMs: 300 });
+	});
+
+	it('entry accessed at partial TTL survives past the original expiry time', () => {
+		// Set entry at t=0 with idleTtlMs=1000ms, sweepIntervalMs=300ms.
+		vi.setSystemTime(0);
+		// Create entry with lastUsedAt=0.
+		cache.set('user@t15.com', { client: {} as OdooClient, session: stubSession, lastUsedAt: 0 });
+		cache.startSweep();
+
+		// Advance 600ms (< TTL). Sweeps at t=300 and t=600.
+		// At t=300: now=300, lastUsedAt=0, diff=300 < 1000 → not evicted.
+		// At t=600: sweep runs, then get() updates lastUsedAt to 600.
+		vi.advanceTimersByTime(600);
+		const result = cache.get('user@t15.com');
+		expect(result).toBeDefined();
+		// lastUsedAt must have been updated to 600.
+		expect(result?.lastUsedAt).toBe(600);
+
+		// Advance to t=1100 (500ms more). Sweeps at t=900.
+		// At t=900: now=900, lastUsedAt=600, diff=300 < 1000 → not evicted.
+		// Without the get() at t=600, the entry would have been evicted at t=1200 sweep.
+		vi.advanceTimersByTime(500);
+		// Entry still alive (only 500ms since last access < 1000ms TTL).
+		expect(cache.size()).toBe(1);
+
+		// Advance to t=2200 (1100ms more). Sweeps at t=1200, t=1500, t=1800, t=2100.
+		// At t=1200: now=1200, lastUsedAt=600, diff=600 < 1000 → not evicted.
+		// At t=1500: now=1500, lastUsedAt=600, diff=900 < 1000 → not evicted.
+		// At t=1800: now=1800, lastUsedAt=600, diff=1200 > 1000 → EVICTED.
+		vi.advanceTimersByTime(1_100);
+		expect(cache.size()).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // 7. stopSweep before startSweep → no error
 // ---------------------------------------------------------------------------
 
