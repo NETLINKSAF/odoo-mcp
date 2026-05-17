@@ -2,23 +2,28 @@
 
 Odoo 19 MCP server. Lets Claude run agentic workflows on any Odoo instance.
 
-**v0.2.0** — MIT — Published as `@netlinksinc/odoo-mcp` on npm. Maintained by NETLINKS Inc.
+**v0.2.1** — MIT — Published as `@netlinksinc/odoo-mcp` on npm. Maintained by NETLINKS Inc.
 
 ## Client compatibility
 
-| Client | Transport | Status |
-|---|---|---|
-| **Claude Code** (CLI) | stdio | Supported (v0.1+) |
-| **Claude Desktop** ("Add custom connector" UI) | Streamable HTTP | Supported (v0.2+) |
-| **Claude Cowork** | Streamable HTTP | Supported (v0.2+) |
+| Client | Transport | Auth | Status |
+|---|---|---|---|
+| **Claude Code** (CLI) | stdio | none (process-local) | Supported (v0.1+) |
+| **Claude Desktop** ("Add custom connector" UI) | Streamable HTTP | OAuth 2.1 + PKCE | Supported (v0.2+, OAuth in v0.2.1+) |
+| **Claude Cowork** | Streamable HTTP | OAuth 2.1 + PKCE | Supported (v0.2+, OAuth in v0.2.1+) |
 
 The same `@netlinksinc/odoo-mcp` binary runs in two modes. `MODE=stdio` (default) is for Claude Code — it spawns the binary as a subprocess. `MODE=http` is for Claude Desktop's newer connector UI and Cowork — you deploy the binary yourself (Fly.io / Render / your VPS) and point your remote-MCP client at the URL.
 
+**v0.2.1** replaces the single shared bearer token of v0.2.0 with OAuth 2.1 Authorization Code + PKCE. Each end-user authenticates with their own Odoo credentials and gets their own access token; tool calls execute under their per-user `OdooClient`. Stdio mode is unchanged.
+
 ## Self-host for Claude Desktop / Cowork
 
-See **[docs/v0.2-deploy.md](docs/v0.2-deploy.md)** for the full deployment guide: Fly.io is the canonical target (~5 minutes), with secondary instructions for Render, Railway, and generic Linux VPS. Single-tenant — one deployment serves one Odoo instance with one bearer token.
+- **[docs/v0.2.1-oauth.md](docs/v0.2.1-oauth.md)** — v0.2.1 OAuth migration guide. New env vars, end-user flows for Claude Desktop (automatic) and Claude Code (manual `odoo-mcp auth` subcommand), admin allowlist, key rotation, revocation.
+- **[docs/v0.2-deploy.md](docs/v0.2-deploy.md)** — deployment targets: Fly.io (canonical, ~5 minutes), Render, Railway, generic Linux VPS.
 
-The connector is intentionally self-hosted. NETLINKS does not run a hosted multi-user service. You hold your own Odoo credentials at deploy time; nothing is sent through any third-party connector service.
+Multi-tenant by design: one deployment serves multiple end-users, each with their own Odoo credentials encrypted at rest under your server's `MCP_ENCRYPTION_KEY`. Allowlist-gated — only emails you explicitly `odoo-mcp users allow` can complete the OAuth dance.
+
+The connector is intentionally self-hosted. NETLINKS does not run a hosted service. You hold your own encryption key, admin password, and end-users' encrypted Odoo credentials at deploy time; nothing is sent through any third-party connector service.
 
 ---
 
@@ -143,9 +148,11 @@ Structured JSON log lines go to stderr unconditionally. Set `ODOO_MCP_LOG_FILE` 
 
 ## Roadmap
 
-**v0.2 (shipped)** — Streaming HTTP transport mode (env var `MODE=http`), bearer-token auth, `/health` endpoint, Fly.io deploy guide, real-Odoo integration tests. Unlocks Claude Desktop's newer connector UI and Claude Cowork. Same npm package, same 10 tools, same 7 resources.
+**v0.2.1 (shipped)** — OAuth 2.1 Authorization Code + PKCE replaces the static bearer token. Per-user identity end-to-end: each end-user authenticates with their own Odoo credentials, gets their own access token, and tool calls execute under their per-user `OdooClient` via an `AsyncLocalStorage`-propagated `user_id`. Admin API (`/admin/users`) for the allowlist with admin-password auth + rate limiting. Encrypted credential store (AES-256-GCM, per-record IV, `chmod 0o600`); tokens stored as SHA-256 hashes only. CSRF protection on the consent form (HttpOnly + SameSite=Strict cookie + `timingSafeEqual`). Bundled CLI subcommands: `odoo-mcp users {list|allow|revoke}` + `odoo-mcp auth <url>`. Security posture: 99/100. Same 10 tools, same 7 resources.
 
-**Future (not committed)** — Possible additions based on user signal: support for Odoo 17/18 quirks, broader Odoo version coverage, additional self-host deploy recipes. A hosted-by-NETLINKS service is explicitly **not** on the roadmap — the connector is and will remain self-hosted single-tenant.
+**v0.2.0 (shipped)** — Streaming HTTP transport mode (env var `MODE=http`), static bearer-token auth (superseded by v0.2.1 OAuth), `/health` endpoint with proxy-aware redaction, Fly.io deploy guide, real-Odoo integration tests. Unlocked Claude Desktop's newer connector UI and Claude Cowork.
+
+**Future (not committed)** — Possible additions based on user signal: support for Odoo 17/18 quirks, broader Odoo version coverage, additional self-host deploy recipes. A hosted-by-NETLINKS service is explicitly **not** on the roadmap — the connector is and will remain self-hosted (now multi-user-per-deployment).
 
 ---
 
@@ -159,7 +166,7 @@ What this means in practice:
 - **Operational impact.** Claude may issue many RPC requests per query, especially `odoo_search_read` against large tables. Test query patterns against a development Odoo before exposing the connector to production workloads.
 - **Information disclosure.** The connector transmits your Odoo data to Anthropic's Claude API as part of normal operation. Review Anthropic's data handling policy before connecting Odoo instances containing personal data, financial records, or regulated information.
 - **No affiliation.** NETLINKS Inc is not affiliated with Anthropic, Odoo SA, or any of their subsidiaries. "Claude", "Anthropic", "Odoo", and related marks are the property of their respective owners.
-- **Security.** This connector authenticates against Odoo using an API key configured at deploy time. The key has the same permissions as the Odoo user who created it. Use a dedicated, scope-limited `mcp_user` rather than a personal or admin account.
+- **Security.** Each end-user authenticates with their own Odoo API key (encrypted at rest under the server's `MCP_ENCRYPTION_KEY`). Each key has the same permissions as the Odoo user who created it. Use dedicated, scope-limited Odoo users for each MCP-end-user rather than personal or admin accounts. In v0.2.0 stdio deployments a single shared API key was used; v0.2.1 HTTP mode is per-user.
 - **Legal review.** This README is not legal advice. If you intend to deploy this connector in a regulated environment (healthcare, financial services, EU GDPR-sensitive data), consult your own counsel before doing so.
 
 The full license is at `LICENSE`. By using this software you agree to the terms of the MIT License and this disclaimer.
