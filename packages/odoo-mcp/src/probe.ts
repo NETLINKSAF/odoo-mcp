@@ -98,14 +98,21 @@ export async function runProbe(client: OdooClient): Promise<ProbeResult> {
     userContextResult,
   ] = await Promise.allSettled([
     // 1. modules
+    // Odoo 15+ uses `installed_version`; the bare `version` field doesn't exist
+    // on `ir.module.module` (only `installed_version`, `latest_version`,
+    // `published_version`). We expose it as `version` in the public ProbeResult
+    // for clarity at the API boundary.
     client
-      .searchRead('ir.module.module', [['state', '=', 'installed']], ['name', 'version'], {
-        limit: MODULE_PROBE_LIMIT,
-      })
+      .searchRead(
+        'ir.module.module',
+        [['state', '=', 'installed']],
+        ['name', 'installed_version'],
+        { limit: MODULE_PROBE_LIMIT },
+      )
       .then((rows) =>
         rows.map((r) => ({
           name: r.name as string,
-          version: r.version as string,
+          version: r.installed_version as string,
         })),
       ),
 

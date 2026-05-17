@@ -19,7 +19,7 @@ function makeClientMock(): OdooClient {
 // Shared valid return values
 // ---------------------------------------------------------------------------
 
-const MODULES = [{ id: 1, name: 'base', version: '17.0.1.0.0' }];
+const MODULES = [{ id: 1, name: 'base', installed_version: '17.0.1.0.0' }];
 const REPORTS = [{ id: 1, report_name: 'sale.report_saleorder', model: 'sale.order', report_type: 'qweb-pdf' }];
 const SERVER_ACTIONS = [{ id: 1, name: 'Send Email', model_id: [3, 'res.partner'], type: 'ir.actions.server' }];
 const COMPANIES = [{ id: 1, name: 'NETLINKS', currency_id: [2, 'USD'] }];
