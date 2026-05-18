@@ -11,6 +11,18 @@ import type { OdooClient } from '@netlinksinc/odoo-client';
 import { createOAuthEndpoints } from '../src/oauth.js';
 import type { OAuthHandlerConfig } from '../src/oauth.js';
 
+// Stub the upstream jsonRpc helper so oauth tests can drive end-user
+// credential-verification outcomes without hitting a real Odoo. Default:
+// resolves to 1 (auth success); override per-test with mockResolvedValueOnce.
+vi.mock('@netlinksinc/odoo-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@netlinksinc/odoo-client')>();
+  return {
+    ...actual,
+    jsonRpc: vi.fn().mockResolvedValue(1),
+  };
+});
+import { jsonRpc as mockedJsonRpc } from '@netlinksinc/odoo-client';
+
 // ---------------------------------------------------------------------------
 // Stable 32-byte test encryption key.
 // ---------------------------------------------------------------------------
@@ -138,6 +150,7 @@ function makeConfig(overrides: Partial<OAuthHandlerConfig> = {}): OAuthHandlerCo
   return {
     publicUrl: 'https://mcp.example.com',
     port: 3000,
+    odooUrl: 'https://odoo.example.com',
     odooDb: 'testdb',
     userStore: makeUserStore(),
     probeClient: makeOdooClient(),
@@ -729,13 +742,10 @@ describe('handleAuthorize POST', () => {
 
   it('Odoo auth fail → 200 re-render with error', async () => {
     const { endpoints, clientId } = await makeRegisteredEndpoints();
-    // Override probe to return falsy.
-    const config2 = makeConfig();
-    vi.mocked(config2.probeClient.execute).mockResolvedValue(0);
-    // Use a fresh endpoints with the same clients map trick won't work — need separate instance.
+    // Force the next jsonRpc call (common.authenticate) to return 0 → fail.
+    vi.mocked(mockedJsonRpc).mockResolvedValueOnce(0);
     const config3 = makeConfig();
     vi.mocked(config3.userStore.isAllowed).mockReturnValue(true);
-    vi.mocked(config3.probeClient.execute).mockResolvedValue(0);
     const endpoints3 = createOAuthEndpoints(config3);
 
     // Register client in endpoints3.

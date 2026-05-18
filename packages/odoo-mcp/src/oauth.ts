@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 // @ts-ignore — @types/node not installed
 import { parse as parseQs } from 'node:querystring';
 
-import type { OdooClient } from '@netlinksinc/odoo-client';
+import { type OdooClient, jsonRpc } from '@netlinksinc/odoo-client';
 
 import { renderConsentPage, renderErrorPage } from './consent-page.js';
 import type { EncryptionService } from './encryption.js';
@@ -37,6 +37,8 @@ declare const process: {
 export interface OAuthHandlerConfig {
   publicUrl: string;
   port: number;
+  /** Base URL of the Odoo instance (no trailing slash). Used to verify end-user creds via `common.authenticate`. */
+  odooUrl: string;
   odooDb: string;
   userStore: UserStore;
   probeClient: OdooClient;
@@ -481,15 +483,17 @@ export function createOAuthEndpoints(config: OAuthHandlerConfig): OAuthEndpoints
       return;
     }
 
-    // Verify Odoo credentials.
+    // Verify end-user Odoo credentials by calling the `common.authenticate`
+    // service directly. Note: OdooClient.execute() routes everything through
+    // `object.execute_kw`, which is for model methods — it CANNOT call the
+    // `common` service. We use the raw jsonRpc helper instead.
     let uid: unknown;
     try {
-      uid = await config.probeClient.execute('common', 'authenticate', [
-        config.odooDb,
-        email,
-        api_key,
-        {},
-      ]);
+      uid = await jsonRpc(config.odooUrl, '/jsonrpc', {
+        service: 'common',
+        method: 'authenticate',
+        args: [config.odooDb, email, api_key, {}],
+      });
     } catch {
       uid = null;
     }

@@ -130,6 +130,7 @@ const STARTUP_TIMEOUT_MS = 30_000;
       const oauthEndpoints = createOAuthEndpoints({
         publicUrl: httpCfg.publicUrl,
         port: httpCfg.port,
+        odooUrl: config.odoo.url,
         odooDb: config.odoo.db,
         userStore,
         probeClient,
