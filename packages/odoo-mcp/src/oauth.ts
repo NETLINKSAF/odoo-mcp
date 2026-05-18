@@ -47,6 +47,13 @@ export interface OAuthHandlerConfig {
 
 export interface OAuthEndpoints {
   handleMetadata(req: IncomingMessage, res: ServerResponse): void;
+  /**
+   * RFC 9728 Protected Resource Metadata — served at
+   * /.well-known/oauth-protected-resource[/<path>]. Required by the MCP
+   * authorization spec so clients can discover which authorization server
+   * issues tokens for this resource.
+   */
+  handleResourceMetadata(req: IncomingMessage, res: ServerResponse): void;
   handleRegister(req: IncomingMessage, res: ServerResponse): Promise<void>;
   handleAuthorize(req: IncomingMessage, res: ServerResponse): Promise<void>;
   handleToken(req: IncomingMessage, res: ServerResponse): Promise<void>;
@@ -236,6 +243,28 @@ export function createOAuthEndpoints(config: OAuthHandlerConfig): OAuthEndpoints
       code_challenge_methods_supported: ['S256'],
       grant_types_supported: ['authorization_code'],
       token_endpoint_auth_methods_supported: ['none'],
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // handleResourceMetadata — GET /.well-known/oauth-protected-resource[/<path>]
+  // RFC 9728. Tells MCP clients which authorization server issues tokens for
+  // this MCP resource. Required by the latest MCP authorization spec.
+  // -------------------------------------------------------------------------
+
+  function handleResourceMetadata(req: IncomingMessage, res: ServerResponse): void {
+    // @ts-ignore — req.method available at runtime
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'method_not_allowed' });
+      return;
+    }
+    const issuer = deriveIssuer(req, config);
+    sendJson(res, 200, {
+      resource: `${issuer}/mcp`,
+      authorization_servers: [issuer],
+      scopes_supported: ['mcp'],
+      bearer_methods_supported: ['header'],
+      resource_documentation: `${issuer}/`,
     });
   }
 
@@ -701,5 +730,5 @@ export function createOAuthEndpoints(config: OAuthHandlerConfig): OAuthEndpoints
     });
   }
 
-  return { handleMetadata, handleRegister, handleAuthorize, handleToken };
+  return { handleMetadata, handleResourceMetadata, handleRegister, handleAuthorize, handleToken };
 }

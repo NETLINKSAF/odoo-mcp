@@ -243,6 +243,35 @@ function jsonResponse(res: NodeServerResponse, status: number, body: unknown): v
 }
 
 /**
+ * Build the RFC 6750 + RFC 9728 WWW-Authenticate header value that tells
+ * unauthenticated clients where to find the resource metadata document.
+ * Required by the MCP authorization spec — Cowork/Claude Desktop will
+ * stop after a bare `401` and refuse to proceed.
+ */
+function buildWwwAuthenticate(req: NodeIncomingMessage): string {
+  // @ts-ignore — req.headers available at runtime
+  const protoHeader: string | string[] | undefined = req.headers['x-forwarded-proto'];
+  const proto = (Array.isArray(protoHeader) ? protoHeader[0] : protoHeader) ?? 'http';
+  // @ts-ignore — req.headers available at runtime
+  const hostHeader: string | string[] | undefined = req.headers.host;
+  const host = (Array.isArray(hostHeader) ? hostHeader[0] : hostHeader) ?? 'localhost';
+  const metadataUrl = `${proto}://${host}/.well-known/oauth-protected-resource`;
+  return `Bearer realm="MCP", resource_metadata="${metadataUrl}"`;
+}
+
+/** Send 401 with WWW-Authenticate pointing at the resource-metadata document. */
+function unauthorizedResponse(req: NodeIncomingMessage, res: NodeServerResponse): void {
+  const payload = JSON.stringify({ error: 'unauthorized' });
+  res.writeHead(401, {
+    'Content-Type': 'application/json',
+    // @ts-ignore — Buffer.byteLength is a Node.js global
+    'Content-Length': Buffer.byteLength(payload),
+    'WWW-Authenticate': buildWwwAuthenticate(req),
+  });
+  res.end(payload);
+}
+
+/**
  * Set HSTS header when the request arrived over HTTPS
  * (detected via the X-Forwarded-Proto header set by the TLS terminator).
  * US-1 AC-9.
@@ -525,6 +554,27 @@ export async function startHttpTransport(
         }
 
         // ----------------------------------------------------------------
+        // Route: /.well-known/oauth-protected-resource[/mcp] — RFC 9728.
+        // Required by the MCP authorization spec; clients fetch this to
+        // discover which authorization server issues tokens for /mcp.
+        // ----------------------------------------------------------------
+        if (
+          path === '/.well-known/oauth-protected-resource' ||
+          path === '/.well-known/oauth-protected-resource/mcp'
+        ) {
+          config.oauthEndpoints.handleResourceMetadata(req, res);
+          logRequest(
+            method,
+            path,
+            200,
+            startedAt,
+            extractClientIp(req),
+            String(req.headers['user-agent'] ?? ''),
+          );
+          return;
+        }
+
+        // ----------------------------------------------------------------
         // Route: /oauth/* — oauth endpoints handle their own rate limiting and validation
         // ----------------------------------------------------------------
         if (path === '/oauth/register') {
@@ -582,7 +632,7 @@ export async function startHttpTransport(
             clientIpForRate,
             String(req.headers['user-agent'] ?? ''),
           );
-          jsonResponse(res, 401, { error: 'unauthorized' });
+          unauthorizedResponse(req, res);
           return;
         }
         const tokenResult = config.userStore.resolveToken(rawToken);
@@ -596,7 +646,7 @@ export async function startHttpTransport(
             clientIpForRate,
             String(req.headers['user-agent'] ?? ''),
           );
-          jsonResponse(res, 401, { error: 'unauthorized' });
+          unauthorizedResponse(req, res);
           return;
         }
         const { email } = tokenResult;
