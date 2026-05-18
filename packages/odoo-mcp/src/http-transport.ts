@@ -672,11 +672,33 @@ export async function startHttpTransport(
           const sessionId = Array.isArray(sessionIdHeader) ? sessionIdHeader[0] : sessionIdHeader;
 
           // ------------------------------------------------------------------
-          // 64 KiB body limit (US-1 AC-8 / US-11 AC-8 [threat-model]) — read and buffer before routing
+          // 64 KiB body limit (US-1 AC-8 / US-11 AC-8 [threat-model]) — read,
+          // cap, and PARSE before routing. The MCP SDK's handleRequest expects
+          // a parsed JSON body in its third argument (see
+          // StreamableHTTPServerTransport.handleRequest signature
+          // `parsedBody?: unknown`). Passing a raw Buffer makes the SDK skip
+          // the initialize handshake silently — sessionId never gets set,
+          // Mcp-Session-Id header is never sent, and the client falls back
+          // to no-session GETs that 400 here.
           // ------------------------------------------------------------------
-          let body: BufferLike;
+          let body: unknown;
           try {
-            body = await readBody(req);
+            const raw = await readBody(req);
+            // BufferLike.toString() returns the buffer as utf-8 text at runtime.
+            // @ts-ignore — ambient BufferLike doesn't model the encoding arg
+            const text = String(raw.toString('utf8') as string);
+            // GET/DELETE have no body; only parse for methods that carry one.
+            if (method === 'POST' && text.length > 0) {
+              try {
+                body = JSON.parse(text);
+              } catch {
+                logRequest(method, path, 400, startedAt, client_ip, user_agent, request_id);
+                jsonResponse(res, 400, { error: 'invalid_json' });
+                return;
+              }
+            } else {
+              body = undefined;
+            }
           } catch (bodyErr) {
             if (
               bodyErr !== null &&

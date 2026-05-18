@@ -624,7 +624,12 @@ describe('T-11: 64 KiB body limit (US-1 AC-8 / US-11 AC-8 [threat-model])', () =
   });
 
   it('accepts a body just under 64 KiB (65 535 bytes)', async () => {
-    const payload = Buffer.alloc(65_535, 'x');
+    // Server-side body parsing (MCP SDK requires pre-parsed JSON) now means
+    // the body must be valid JSON. Build a payload whose stringified length
+    // is exactly under the 64 KiB cap.
+    const filler = 'x'.repeat(65_535 - 32);
+    const payload = Buffer.from(JSON.stringify({ jsonrpc: '2.0', _f: filler }));
+    expect(payload.length).toBeLessThanOrEqual(65_535);
     const { status } = await requestFull(
       port,
       'POST',
