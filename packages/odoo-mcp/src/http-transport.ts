@@ -79,7 +79,13 @@ export type HttpServer = any;
 
 export interface HttpTransportConfig {
   port: number;
-  server: McpServer;
+  /**
+   * Factory: builds a fresh McpServer per new HTTP session. The MCP SDK
+   * rejects a second `server.connect(transport)` call on the same server
+   * instance with "Already connected to a transport", so multi-session
+   * HTTP must NOT share one server across sessions.
+   */
+  createServerInstance: () => McpServer;
   logger: Logger;
   healthPayload: HealthPayload;
   /**
@@ -695,11 +701,14 @@ export async function startHttpTransport(
               return;
             }
 
-            // New session — create a fresh transport and connect to the shared McpServer
+            // New session — create a fresh transport AND a fresh McpServer.
+            // The SDK rejects a second `server.connect()` call on the same
+            // instance, so each session needs its own server.
             transport = new StreamableHTTPServerTransport({
               // @ts-ignore — randomUUID imported with @ts-ignore above
               sessionIdGenerator: () => randomUUID() as string,
             });
+            const sessionServer = config.createServerInstance();
 
             // Clean up the cache entry when the transport closes
             transport.onclose = () => {
@@ -710,7 +719,7 @@ export async function startHttpTransport(
             };
 
             // Connect before handling the first request so the server is ready
-            await config.server.connect(transport);
+            await sessionServer.connect(transport);
 
             // Cache the transport under its generated session ID
             if (transport.sessionId !== undefined) {

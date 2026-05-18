@@ -109,7 +109,7 @@ const STARTUP_TIMEOUT_MS = 30_000;
         ),
       ]);
 
-      const { server, logger, probeOk, probeClient } = serverResult;
+      const { logger, probeOk, probeClient, createServerInstance } = serverResult;
 
       // 3. Log startup info before connecting (AC-3 — startup BEFORE connect).
       logger.startup({
@@ -145,7 +145,7 @@ const STARTUP_TIMEOUT_MS = 30_000;
       const { close } = await startHttpTransport({
         port: httpCfg.port,
         trustProxy: httpCfg.trustProxy,
-        server,
+        createServerInstance,
         logger,
         healthPayload,
         oauthEndpoints,

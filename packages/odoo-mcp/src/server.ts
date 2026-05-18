@@ -39,9 +39,20 @@ function computeProbeOk(probe: ProbeResult): boolean {
  * Authentication errors (OdooAuthError) are intentionally NOT caught here —
  * they propagate to the caller (bin.ts), which serialises them to stderr.
  */
-export async function createOdooMcpServer(
-  config: McpServerConfig,
-): Promise<{ server: McpServer; logger: Logger; probeOk: boolean; probeClient: OdooClient }> {
+export async function createOdooMcpServer(config: McpServerConfig): Promise<{
+  server: McpServer;
+  /**
+   * Factory that builds a FRESH McpServer instance with the same tools and
+   * resources registered. Each HTTP session must connect to its own server
+   * instance — the MCP SDK rejects a second `server.connect(transport)` call
+   * with "Already connected to a transport". Stdio mode uses the singleton
+   * `server` field above; HTTP mode calls this per new session.
+   */
+  createServerInstance: () => McpServer;
+  logger: Logger;
+  probeOk: boolean;
+  probeClient: OdooClient;
+}> {
   // 1. Build the Odoo probe client.
   const probeClient = new OdooClient(config.odooConfig);
 
@@ -57,22 +68,25 @@ export async function createOdooMcpServer(
   // 5. Compute whether the probe completed without any field errors.
   const probeOk = computeProbeOk(probe);
 
-  // 6. Create the MCP server.
-  const server = new McpServer({ name: 'odoo-mcp', version: '0.2.1' });
-
-  // 7. Register resources (static, backed by probe snapshot).
-  registerResources(server, probe);
-
-  // 8. Determine clientResolver:
+  // 6. Determine clientResolver:
   //    - HTTP mode: use the provided resolver (per-user credentials).
   //    - stdio mode: wrap the startup singleton client + session.
   const resolver: ClientResolver = config.clientResolver
     ? config.clientResolver
     : async () => ({ client: probeClient, session });
 
-  // 9. Register all tool handlers.
-  registerAllTools(server, resolver, logger);
+  // 7. Factory: every call returns a brand-new McpServer with tools + resources.
+  //    The resources are static (backed by the probe snapshot) so they're cheap
+  //    to re-register; tool handlers close over the shared resolver + logger.
+  function createServerInstance(): McpServer {
+    const instance = new McpServer({ name: 'odoo-mcp', version: '0.2.1' });
+    registerResources(instance, probe);
+    registerAllTools(instance, resolver, logger);
+    return instance;
+  }
 
-  // 10. Return the wired server plus the probe client (for callers that need it).
-  return { server, logger, probeOk, probeClient };
+  // 8. Singleton server for stdio mode (one process == one transport).
+  const server = createServerInstance();
+
+  return { server, createServerInstance, logger, probeOk, probeClient };
 }

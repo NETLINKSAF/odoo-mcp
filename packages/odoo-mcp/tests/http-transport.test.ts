@@ -167,9 +167,15 @@ function makeClientCache() {
 
 /** Build a full HttpTransportConfig with all required mocks. */
 function makeConfig(overrides: Partial<HttpTransportConfig> = {}): HttpTransportConfig {
+  // createServerInstance returns a fresh mock server each call so the SDK
+  // doesn't complain about "Already connected to a transport" mid-test.
+  const createServerInstance = vi.fn(
+    () =>
+      ({ connect: mockConnect }) as unknown as ReturnType<HttpTransportConfig['createServerInstance']>,
+  );
   return {
     port: 0,
-    server: { connect: mockConnect } as unknown as HttpTransportConfig['server'],
+    createServerInstance,
     logger: makeLogger(),
     healthPayload: makeHealthPayload(true),
     oauthEndpoints: makeOAuthEndpoints(),
