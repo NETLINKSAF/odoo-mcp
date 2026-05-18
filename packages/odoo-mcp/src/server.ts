@@ -79,7 +79,7 @@ export async function createOdooMcpServer(config: McpServerConfig): Promise<{
   //    The resources are static (backed by the probe snapshot) so they're cheap
   //    to re-register; tool handlers close over the shared resolver + logger.
   function createServerInstance(): McpServer {
-    const instance = new McpServer({ name: 'odoo-mcp', version: '0.2.1' });
+    const instance = new McpServer({ name: 'odoo-mcp', version: '0.2.2' });
     registerResources(instance, probe);
     registerAllTools(instance, resolver, logger);
     return instance;

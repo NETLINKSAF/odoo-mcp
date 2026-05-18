@@ -2,7 +2,7 @@
 
 Odoo 19 MCP server. Lets Claude run agentic workflows on any Odoo instance.
 
-**v0.2.1** — MIT — Published as `@netlinksinc/odoo-mcp` on npm. Maintained by NETLINKS Inc.
+**v0.2.2** — MIT — Published as `@netlinksinc/odoo-mcp` on npm. Maintained by NETLINKS Inc.
 
 ## Client compatibility
 
@@ -148,7 +148,15 @@ Structured JSON log lines go to stderr unconditionally. Set `ODOO_MCP_LOG_FILE` 
 
 ## Roadmap
 
-**v0.2.1 (shipped)** — OAuth 2.1 Authorization Code + PKCE replaces the static bearer token. Per-user identity end-to-end: each end-user authenticates with their own Odoo credentials, gets their own access token, and tool calls execute under their per-user `OdooClient` via an `AsyncLocalStorage`-propagated `user_id`. Admin API (`/admin/users`) for the allowlist with admin-password auth + rate limiting. Encrypted credential store (AES-256-GCM, per-record IV, `chmod 0o600`); tokens stored as SHA-256 hashes only. CSRF protection on the consent form (HttpOnly + SameSite=Strict cookie + `timingSafeEqual`). Bundled CLI subcommands: `odoo-mcp users {list|allow|revoke}` + `odoo-mcp auth <url>`. Security posture: 99/100. Same 10 tools, same 7 resources.
+**v0.2.2 (shipped)** — Five production hotfixes after a real-deployment test against Claude Cowork showed v0.2.1's OAuth dance was non-functional end-to-end:
+
+- **End-user credential verification** uses `common.authenticate` service directly. v0.2.1 incorrectly routed it through `object.execute_kw`, which silently returned falsy and surfaced as "Invalid Odoo credentials" on the consent form even with correct credentials.
+- **RFC 9728 Protected Resource Metadata** at `/.well-known/oauth-protected-resource[/mcp]` plus `WWW-Authenticate: Bearer realm="MCP", resource_metadata="..."` on 401s. The latest MCP authorization spec requires this discovery document; without it, Claude Cowork rejects the connector even after a successful token exchange.
+- **One McpServer per HTTP session.** The MCP SDK errors with "Already connected to a transport" if you call `server.connect(transport)` twice on the same instance. `createOdooMcpServer` now returns a `createServerInstance` factory; http-transport calls it per new session.
+- **Session map populated via `onsessioninitialized` callback.** The SDK sets `transport.sessionId` lazily inside `handleRequest` (when it processes the `initialize` JSON-RPC), not at construction. v0.2.1 captured the id too early (always `undefined`), so the sessions map stayed empty and clients sent no-session GETs that 400'd.
+- **JSON body parsed before reaching the SDK.** `StreamableHTTPServerTransport.handleRequest(req, res, parsedBody?)` expects the third arg to be the pre-parsed body, not a raw Buffer. Passing a Buffer made the SDK silently skip session initialization.
+
+**v0.2.1 (shipped, superseded by 0.2.2)** — OAuth 2.1 Authorization Code + PKCE replaces the static bearer token. Per-user identity end-to-end: each end-user authenticates with their own Odoo credentials, gets their own access token, and tool calls execute under their per-user `OdooClient` via an `AsyncLocalStorage`-propagated `user_id`. Admin API (`/admin/users`) for the allowlist with admin-password auth + rate limiting. Encrypted credential store (AES-256-GCM, per-record IV, `chmod 0o600`); tokens stored as SHA-256 hashes only. CSRF protection on the consent form (HttpOnly + SameSite=Strict cookie + `timingSafeEqual`). Bundled CLI subcommands: `odoo-mcp users {list|allow|revoke}` + `odoo-mcp auth <url>`. Security posture: 99/100. Same 10 tools, same 7 resources.
 
 **v0.2.0 (shipped)** — Streaming HTTP transport mode (env var `MODE=http`), static bearer-token auth (superseded by v0.2.1 OAuth), `/health` endpoint with proxy-aware redaction, Fly.io deploy guide, real-Odoo integration tests. Unlocked Claude Desktop's newer connector UI and Claude Cowork.
 
