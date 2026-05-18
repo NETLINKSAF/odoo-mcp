@@ -22,26 +22,54 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-// Mock the StreamableHTTPServerTransport so we don't need a real MCP server
+// Mock the StreamableHTTPServerTransport so we don't need a real MCP server.
+// Mirrors the real SDK behaviour around session initialisation:
+//   - sessionIdGenerator is called to mint an id on the FIRST handleRequest
+//   - transport.sessionId is set to the minted id
+//   - onsessioninitialized(id) is invoked synchronously
+// Without this, the http-transport `sessions` Map never gets populated and
+// the session-limit / session-lookup tests can't trigger their gates.
+let mockSessionCounter = 0;
 vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => {
-  const MockTransport = vi.fn().mockImplementation(() => ({
-    sessionId: undefined as string | undefined,
-    onclose: undefined as (() => void) | undefined,
-    handleRequest: vi.fn().mockImplementation(
-      (_req: unknown, res: { writeHead: (s: number) => void; end: () => void }) => {
-        res.writeHead(200);
-        res.end();
-        return Promise.resolve();
-      },
-    ),
-    close: vi.fn().mockResolvedValue(undefined),
-    connect: vi.fn().mockResolvedValue(undefined),
-    start: vi.fn().mockResolvedValue(undefined),
-    send: vi.fn().mockResolvedValue(undefined),
-  }));
-
-  // Make sessionId assignable so our code can set it
-  (MockTransport as unknown as { _mockSessionId?: string })._mockSessionId = undefined;
+  interface MockTransportOpts {
+    sessionIdGenerator?: () => string;
+    onsessioninitialized?: (id: string) => void;
+  }
+  const MockTransport = vi.fn().mockImplementation((opts?: MockTransportOpts) => {
+    const obj: {
+      sessionId: string | undefined;
+      onclose: (() => void) | undefined;
+      handleRequest: ReturnType<typeof vi.fn>;
+      close: ReturnType<typeof vi.fn>;
+      connect: ReturnType<typeof vi.fn>;
+      start: ReturnType<typeof vi.fn>;
+      send: ReturnType<typeof vi.fn>;
+    } = {
+      sessionId: undefined,
+      onclose: undefined,
+      handleRequest: vi.fn().mockImplementation(
+        (_req: unknown, res: { writeHead: (s: number) => void; end: () => void }) => {
+          // Fire session initialisation on the FIRST handleRequest call,
+          // matching the real SDK's lazy id assignment.
+          if (obj.sessionId === undefined) {
+            const id = opts?.sessionIdGenerator
+              ? opts.sessionIdGenerator()
+              : `mock-sess-${++mockSessionCounter}`;
+            obj.sessionId = id;
+            opts?.onsessioninitialized?.(id);
+          }
+          res.writeHead(200);
+          res.end();
+          return Promise.resolve();
+        },
+      ),
+      close: vi.fn().mockResolvedValue(undefined),
+      connect: vi.fn().mockResolvedValue(undefined),
+      start: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+    };
+    return obj;
+  });
 
   return { StreamableHTTPServerTransport: MockTransport };
 });
@@ -1045,27 +1073,41 @@ describe('session limit (F-003)', () => {
 
   beforeEach(() => {
     sessionCounter = 0;
-    vi.mocked(StreamableHTTPServerTransport).mockImplementation(() => {
-      const sid = `sess-${++sessionCounter}`;
-      const obj = {
-        sessionId: sid as string | undefined,
-        onclose: undefined as (() => void) | undefined,
-        handleRequest: vi.fn().mockImplementation(
-          (_req: unknown, res: { writeHead: (s: number) => void; end: () => void }) => {
-            res.writeHead(200);
-            res.end();
-            return Promise.resolve();
-          },
-        ),
-        close: vi.fn().mockImplementation(async () => {
-          if (obj.onclose) obj.onclose();
-        }),
-        connect: vi.fn().mockResolvedValue(undefined),
-        start: vi.fn().mockResolvedValue(undefined),
-        send: vi.fn().mockResolvedValue(undefined),
-      };
-      return obj;
-    });
+    vi.mocked(StreamableHTTPServerTransport).mockImplementation(
+      (opts?: { sessionIdGenerator?: () => string; onsessioninitialized?: (id: string) => void }) => {
+        const obj: {
+          sessionId: string | undefined;
+          onclose: (() => void) | undefined;
+          handleRequest: ReturnType<typeof vi.fn>;
+          close: ReturnType<typeof vi.fn>;
+          connect: ReturnType<typeof vi.fn>;
+          start: ReturnType<typeof vi.fn>;
+          send: ReturnType<typeof vi.fn>;
+        } = {
+          sessionId: undefined,
+          onclose: undefined,
+          handleRequest: vi.fn().mockImplementation(
+            (_req: unknown, res: { writeHead: (s: number) => void; end: () => void }) => {
+              if (obj.sessionId === undefined) {
+                const id = opts?.sessionIdGenerator?.() ?? `sess-${++sessionCounter}`;
+                obj.sessionId = id;
+                opts?.onsessioninitialized?.(id);
+              }
+              res.writeHead(200);
+              res.end();
+              return Promise.resolve();
+            },
+          ),
+          close: vi.fn().mockImplementation(async () => {
+            if (obj.onclose) obj.onclose();
+          }),
+          connect: vi.fn().mockResolvedValue(undefined),
+          start: vi.fn().mockResolvedValue(undefined),
+          send: vi.fn().mockResolvedValue(undefined),
+        };
+        return obj;
+      },
+    );
   });
 
   afterEach(() => {
@@ -1117,28 +1159,42 @@ describe('session limit (F-003)', () => {
   it('allows a new session after an existing session closes', async () => {
     const transports: Array<{ sessionId: string | undefined; onclose: (() => void) | undefined; close: () => Promise<void> }> = [];
 
-    vi.mocked(StreamableHTTPServerTransport).mockImplementation(() => {
-      const sid = `sess-close-${++sessionCounter}`;
-      const obj = {
-        sessionId: sid as string | undefined,
-        onclose: undefined as (() => void) | undefined,
-        handleRequest: vi.fn().mockImplementation(
-          (_req: unknown, res: { writeHead: (s: number) => void; end: () => void }) => {
-            res.writeHead(200);
-            res.end();
-            return Promise.resolve();
-          },
-        ),
-        close: vi.fn().mockImplementation(async () => {
-          if (obj.onclose) obj.onclose();
-        }),
-        connect: vi.fn().mockResolvedValue(undefined),
-        start: vi.fn().mockResolvedValue(undefined),
-        send: vi.fn().mockResolvedValue(undefined),
-      };
-      transports.push(obj);
-      return obj;
-    });
+    vi.mocked(StreamableHTTPServerTransport).mockImplementation(
+      (opts?: { sessionIdGenerator?: () => string; onsessioninitialized?: (id: string) => void }) => {
+        const obj: {
+          sessionId: string | undefined;
+          onclose: (() => void) | undefined;
+          handleRequest: ReturnType<typeof vi.fn>;
+          close: ReturnType<typeof vi.fn>;
+          connect: ReturnType<typeof vi.fn>;
+          start: ReturnType<typeof vi.fn>;
+          send: ReturnType<typeof vi.fn>;
+        } = {
+          sessionId: undefined,
+          onclose: undefined,
+          handleRequest: vi.fn().mockImplementation(
+            (_req: unknown, res: { writeHead: (s: number) => void; end: () => void }) => {
+              if (obj.sessionId === undefined) {
+                const id = opts?.sessionIdGenerator?.() ?? `sess-close-${++sessionCounter}`;
+                obj.sessionId = id;
+                opts?.onsessioninitialized?.(id);
+              }
+              res.writeHead(200);
+              res.end();
+              return Promise.resolve();
+            },
+          ),
+          close: vi.fn().mockImplementation(async () => {
+            if (obj.onclose) obj.onclose();
+          }),
+          connect: vi.fn().mockResolvedValue(undefined),
+          start: vi.fn().mockResolvedValue(undefined),
+          send: vi.fn().mockResolvedValue(undefined),
+        };
+        transports.push(obj);
+        return obj;
+      },
+    );
 
     const result = await startHttpTransport(makeConfig());
     const addr = result.httpServer.address() as AddressInfo;

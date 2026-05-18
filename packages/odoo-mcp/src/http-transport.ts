@@ -704,9 +704,24 @@ export async function startHttpTransport(
             // New session — create a fresh transport AND a fresh McpServer.
             // The SDK rejects a second `server.connect()` call on the same
             // instance, so each session needs its own server.
+            //
+            // Critical: `transport.sessionId` is NOT set at construction —
+            // the SDK assigns it inside handleRequest() when it processes
+            // the `initialize` request. Use the `onsessioninitialized`
+            // callback (called synchronously when the SDK generates the
+            // id) to populate the sessions Map. If you read sessionId
+            // before handleRequest, you get `undefined` and the Map stays
+            // empty, so the next request from the client can't find the
+            // session and the client falls back to no-session GETs that
+            // 400 here.
             transport = new StreamableHTTPServerTransport({
               // @ts-ignore — randomUUID imported with @ts-ignore above
               sessionIdGenerator: () => randomUUID() as string,
+              onsessioninitialized: (id: string) => {
+                // biome-ignore lint/style/noNonNullAssertion: transport is defined in this branch
+                sessions.set(id, transport!);
+                sessionLastActivity.set(id, Date.now());
+              },
             });
             const sessionServer = config.createServerInstance();
 
@@ -720,12 +735,6 @@ export async function startHttpTransport(
 
             // Connect before handling the first request so the server is ready
             await sessionServer.connect(transport);
-
-            // Cache the transport under its generated session ID
-            if (transport.sessionId !== undefined) {
-              sessions.set(transport.sessionId, transport);
-              sessionLastActivity.set(transport.sessionId, Date.now());
-            }
           } else if (sessionId) {
             // Existing session lookup
             const existing = sessions.get(sessionId);
